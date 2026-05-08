@@ -69,8 +69,8 @@ nfpms:
       - deb
       - rpm
 
-furies:
-  - account: cirruslabs
+#furies:
+#  - account: cirruslabs
 
 notarize:
   macos:
