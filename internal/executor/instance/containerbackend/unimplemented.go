@@ -77,3 +77,7 @@ func (*Unimplemented) ContainerDelete(ctx context.Context, id string) error { re
 func (*Unimplemented) SystemInfo(ctx context.Context) (*SystemInfo, error) {
 	return nil, ErrNotImplemented
 }
+
+func (*Unimplemented) RegistryLogin(ctx context.Context, registry, username, password string) error {
+	return ErrNotImplemented
+}

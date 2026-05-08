@@ -28,6 +28,7 @@ type ContainerBackend interface {
 	ImageBuild(ctx context.Context, tarball io.Reader, input *ImageBuildInput) (<-chan string, <-chan error)
 	ImageInspect(ctx context.Context, reference string) error
 	ImageDelete(ctx context.Context, reference string) error
+	RegistryLogin(ctx context.Context, registry, username, password string) error
 
 	VolumeCreate(ctx context.Context, name string) error
 	VolumeInspect(ctx context.Context, name string) error

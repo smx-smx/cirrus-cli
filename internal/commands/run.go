@@ -27,9 +27,26 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const githubTokenEnvVar = "GITHUB_TOKEN"
+const ghcrTokenEnvVar = "GHCR_TOKEN"
+const githubRepoEnvVar = "GITHUB_REPOSITORY"
+const githubActionsEnvVar = "GITHUB_ACTIONS"
+const githubActorEnvVar = "GITHUB_ACTOR"
+
 const projectDir = "."
 
 var ErrRun = errors.New("run failed")
+
+func defaultDockerfileImageTemplate() string {
+	if os.Getenv(githubActionsEnvVar) == "true" {
+		repo := os.Getenv(githubRepoEnvVar)
+		if repo == "" {
+			repo = "unknown"
+		}
+		return fmt.Sprintf("ghcr.io/%s:dockerfile-%%s", strings.ToLower(repo))
+	}
+	return "gcr.io/cirrus-ci-community/%s:latest"
+}
 
 // General flags.
 var (
@@ -59,6 +76,13 @@ var (
 var (
 	dockerfileImageTemplate string
 	dockerfileImagePush     bool
+)
+
+// GitHub Actions-related flags.
+var (
+	githubActions bool
+	ghcrRegistry  string
+	githubToken   string
 )
 
 // Tart-related flags.
@@ -191,12 +215,32 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Container-related options
+	isGithubActions := githubActions || os.Getenv(githubActionsEnvVar) == "true"
+
+	ghcrToken := githubToken
+	if ghcrToken == "" {
+		ghcrToken = os.Getenv(githubTokenEnvVar)
+	}
+
+	ghcrUsername := ""
+	if isGithubActions {
+		ghcrUsername = os.Getenv(githubActorEnvVar)
+		if ghcrUsername == "" {
+			return fmt.Errorf("%w: cannot determine GitHub username", ErrRun)
+		}
+	}
+
 	executorOpts = append(executorOpts, executor.WithContainerOptions(options.ContainerOptions{
 		LazyPull:  lazyPull || containerLazyPull,
 		NoCleanup: debugNoCleanup,
 
 		DockerfileImageTemplate: dockerfileImageTemplate,
 		DockerfileImagePush:     dockerfileImagePush,
+
+		GitHubActionsMode: isGithubActions,
+		GHCRRegistry:      ghcrRegistry,
+		GHCRUsername:      ghcrUsername,
+		GitHubToken:       ghcrToken,
 	}))
 
 	// Tart-related options
@@ -299,9 +343,18 @@ func newRunCmd() *cobra.Command {
 
 	// Container-related flags: Dockerfile as CI environment feature
 	cmd.PersistentFlags().StringVar(&dockerfileImageTemplate, "dockerfile-image-template",
-		"gcr.io/cirrus-ci-community/%s:latest", "image that Dockerfile as CI environment feature should produce")
+		defaultDockerfileImageTemplate(), "image that Dockerfile as CI environment feature should produce")
 	cmd.PersistentFlags().BoolVar(&dockerfileImagePush, "dockerfile-image-push",
 		false, "whether to push the image produced by the Dockerfile as CI environment feature")
+
+	// GitHub Actions-related flags
+	cmd.PersistentFlags().BoolVar(&githubActions, "github-actions", false,
+		"enable GitHub Actions mode for Docker image caching in ghcr.io")
+	cmd.PersistentFlags().StringVar(&ghcrRegistry, "ghcr-registry", "ghcr.io",
+		"GitHub Container Registry to use for image caching (used with --github-actions)")
+	cmd.PersistentFlags().StringVar(&githubToken, "github-token", "",
+		"GitHub token for authenticating with ghcr.io (can also use GITHUB_TOKEN environment variable, "+
+			"used with --github-actions)")
 
 	// Tart-related flags
 	cmd.PersistentFlags().BoolVar(&tartLazyPull, "tart-lazy-pull", false,

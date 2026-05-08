@@ -194,6 +194,19 @@ func (backend *Docker) ImageDelete(ctx context.Context, reference string) error 
 	return err
 }
 
+func (backend *Docker) RegistryLogin(ctx context.Context, registry, username, password string) error {
+	_, err := backend.cli.RegistryLogin(ctx, client.RegistryLoginOptions{
+		ServerAddress: registry,
+		Username:      username,
+		Password:      password,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to login to %s: %w", registry, err)
+	}
+
+	return nil
+}
+
 func (backend *Docker) VolumeCreate(ctx context.Context, name string) error {
 	_, err := backend.cli.VolumeCreate(ctx, client.VolumeCreateOptions{Name: name})
 	return err

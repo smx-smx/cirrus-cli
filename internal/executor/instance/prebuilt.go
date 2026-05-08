@@ -4,12 +4,14 @@ import (
 	"archive/tar"
 	"context"
 	"errors"
-	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend"
-	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/runconfig"
-	"go.opentelemetry.io/otel/attribute"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+
+	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend"
+	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/runconfig"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 type PrebuiltInstance struct {
@@ -99,6 +101,16 @@ func (prebuilt *PrebuiltInstance) Run(ctx context.Context, config *runconfig.Run
 		return err
 	}
 	prebuilt.containerBackend = backend
+
+	containerOpts := config.ContainerOptions
+
+	// In GitHub Actions mode, login to ghcr.io first to enable remote cache check
+	if containerOpts.GitHubActionsMode && containerOpts.GitHubToken != "" {
+		logger.Infof("Logging into %s...", containerOpts.GHCRRegistry)
+		if err := backend.RegistryLogin(ctx, containerOpts.GHCRRegistry, containerOpts.GHCRUsername, containerOpts.GitHubToken); err != nil {
+			return fmt.Errorf("failed to login to %s: %w", containerOpts.GHCRRegistry, err)
+		}
+	}
 
 	// Check if the image we're about to build is available locally
 	if err = backend.ImageInspect(ctx, prebuilt.Image); err == nil {

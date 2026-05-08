@@ -4,6 +4,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
+	"path/filepath"
+	"regexp"
+	"strconv"
+	"strings"
+	"time"
+
 	"github.com/cirruslabs/chacha/pkg/localnetworkhelper"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/build"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/build/taskstatus"
@@ -20,12 +27,6 @@ import (
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
 	"github.com/cirruslabs/echelon"
 	"github.com/cirruslabs/echelon/renderers"
-	"io"
-	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
-	"time"
 )
 
 var (
@@ -288,8 +289,10 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 }
 
 func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict bool) (string, error) {
-	// Modify image name if the user provided a custom template
-	if e.containerOptions.DockerfileImageTemplate == "" {
+	template := e.containerOptions.DockerfileImageTemplate
+
+	// No template set, return as-is
+	if template == "" {
 		return reference, nil
 	}
 
@@ -307,5 +310,5 @@ func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict boo
 	hash := matches[1]
 
 	// Render the template
-	return strings.ReplaceAll(e.containerOptions.DockerfileImageTemplate, "%s", hash), nil
+	return strings.ReplaceAll(template, "%s", hash), nil
 }
