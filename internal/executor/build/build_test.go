@@ -20,7 +20,7 @@ func TestNoUnresolvedDeps(t *testing.T) {
 			RequiredGroups: []int64{0},
 			Instance:       testutil.GetBasicContainerInstance(t, "debian:latest"),
 		},
-	}, nil)
+	}, nil, nil)
 	if err != nil {
 		t.Fatal(err)
 	}

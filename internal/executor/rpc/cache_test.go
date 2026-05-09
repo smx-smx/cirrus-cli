@@ -66,7 +66,7 @@ func TestGenerateCacheUploadURLFallsBackToContainerEndpoint(t *testing.T) {
 func startRPCServerAndConnect(t *testing.T, task *api.Task) (*RPC, *grpc.ClientConn) {
 	t.Helper()
 
-	b, err := build.New(t.TempDir(), []*api.Task{task}, &logger.LightweightStub{})
+	b, err := build.New(t.TempDir(), []*api.Task{task}, &logger.LightweightStub{}, nil)
 	require.NoError(t, err)
 
 	rpcServer := New(b)
