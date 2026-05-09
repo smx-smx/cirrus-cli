@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime"
+
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/runconfig"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/options"
@@ -11,7 +13,6 @@ import (
 	"github.com/cirruslabs/cirrus-cli/internal/executor/pullhelper"
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
 	"github.com/google/uuid"
-	"runtime"
 )
 
 var (
@@ -72,7 +73,7 @@ func CreateWorkingVolume(
 ) (agentVolume *Volume, vol *Volume, err error) {
 	agentImage := platform.ContainerAgentImage(agentVersion)
 
-	if err := pullhelper.PullHelper(ctx, agentImage, architecture, backend, containerOptions, nil); err != nil {
+	if err := pullhelper.PullHelper(ctx, agentImage, architecture, backend, containerOptions, "container agent", nil); err != nil {
 		return nil, nil, fmt.Errorf("%w: when pulling agent image %s: %v",
 			ErrVolumeCreationFailed, agentImage, err)
 	}

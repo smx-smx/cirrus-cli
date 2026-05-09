@@ -55,6 +55,7 @@ func RunContainerizedAgent(ctx context.Context, config *runconfig.RunConfig, par
 	}
 
 	if err := pullhelper.PullHelper(ctx, params.Image, params.Architecture, backend, config.ContainerOptions,
+		"containerized agent",
 		logger); err != nil {
 		return err
 	}
@@ -270,7 +271,7 @@ func runAdditionalContainer(
 	containerOptions options.ContainerOptions,
 ) error {
 	if err := pullhelper.PullHelper(ctx, additionalContainer.Image, architecture, backend,
-		containerOptions, logger); err != nil {
+		containerOptions, "additional container", logger); err != nil {
 		return fmt.Errorf("%w: %v", ErrAdditionalContainerFailed, err)
 	}
 
