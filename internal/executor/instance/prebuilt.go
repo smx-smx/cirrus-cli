@@ -3,6 +3,8 @@ package instance
 import (
 	"archive/tar"
 	"context"
+	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -169,10 +171,24 @@ Outer:
 
 	// Push the image (if needed)
 	if config.ContainerOptions.DockerfileImagePush {
-		return backend.ImagePush(ctx, prebuilt.Image)
+		var auth string
+		// In GitHub Actions mode, construct auth from the token
+		if config.ContainerOptions.GitHubActionsMode && config.ContainerOptions.GitHubToken != "" {
+			auth = constructAuth(config.ContainerOptions.GHCRUsername, config.ContainerOptions.GitHubToken)
+		}
+		return backend.ImagePush(ctx, prebuilt.Image, auth)
 	}
 
 	return nil
+}
+
+func constructAuth(username, password string) string {
+	authConfig := map[string]string{
+		"username": username,
+		"password": password,
+	}
+	authConfigJSON, _ := json.Marshal(authConfig)
+	return base64.URLEncoding.EncodeToString(authConfigJSON)
 }
 
 func (prebuilt *PrebuiltInstance) WorkingDirectory(projectDir string, dirtyMode bool) string {

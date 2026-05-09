@@ -87,10 +87,14 @@ func (backend *Docker) ImagePull(ctx context.Context, reference string, architec
 	return nil
 }
 
-func (backend *Docker) ImagePush(ctx context.Context, reference string) error {
-	auth, err := docker.XRegistryAuthForImage(reference)
-	if err != nil {
-		return err
+func (backend *Docker) ImagePush(ctx context.Context, reference string, auth string) error {
+	// Use passed auth directly, or fallback to config lookup
+	if auth == "" {
+		var err error
+		auth, err = docker.XRegistryAuthForImage(reference)
+		if err != nil {
+			return err
+		}
 	}
 
 	stream, err := backend.cli.ImagePush(ctx, reference, client.ImagePushOptions{

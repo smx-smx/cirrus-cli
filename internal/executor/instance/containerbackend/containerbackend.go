@@ -24,7 +24,7 @@ type ContainerBackend interface {
 	io.Closer
 
 	ImagePull(ctx context.Context, reference string, architecture *api.Architecture) error
-	ImagePush(ctx context.Context, reference string) error
+	ImagePush(ctx context.Context, reference string, auth string) error
 	ImageBuild(ctx context.Context, tarball io.Reader, input *ImageBuildInput) (<-chan string, <-chan error)
 	ImageInspect(ctx context.Context, reference string) error
 	ImageDelete(ctx context.Context, reference string) error

@@ -14,7 +14,7 @@ func (*Unimplemented) ImagePull(ctx context.Context, reference string, architect
 	return ErrNotImplemented
 }
 
-func (*Unimplemented) ImagePush(ctx context.Context, reference string) error {
+func (*Unimplemented) ImagePush(ctx context.Context, reference string, auth string) error {
 	return ErrNotImplemented
 }
 
