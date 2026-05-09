@@ -52,6 +52,7 @@ var (
 	affectedFilesGitRevision       string
 	affectedFilesGitCachedRevision string
 	verbose                        bool
+	skipDependencies               bool
 )
 
 // Common instance-related flags.
@@ -181,7 +182,7 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// Enable a task filter if the task name is specified
 	if len(args) == 1 {
-		taskFilter := taskfilter.MatchExactTask(args[0])
+		taskFilter := taskfilter.MatchExactTaskWithOptions(args[0], !skipDependencies)
 		executorOpts = append(executorOpts, executor.WithTaskFilter(taskFilter))
 	}
 
@@ -322,6 +323,8 @@ func newRunCmd() *cobra.Command {
 	cmd.PersistentFlags().BoolVarP(&verbose, "verbose", "v", false, "")
 	cmd.PersistentFlags().StringVarP(&output, "output", "o", logs.DefaultFormat(), fmt.Sprintf("output format of logs, "+
 		"supported values: %s", strings.Join(logs.Formats(), ", ")))
+	cmd.PersistentFlags().BoolVar(&skipDependencies, "skip-dependencies", false,
+		"when a task is specified, skip running its dependent tasks (including Dockerfile build tasks)")
 
 	// Common instance-related flags
 	cmd.PersistentFlags().BoolVar(&lazyPull, "lazy-pull", false,

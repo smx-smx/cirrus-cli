@@ -18,6 +18,10 @@ func MatchAnyTask() TaskFilter {
 }
 
 func MatchExactTask(desiredTaskNameOrAlias string) TaskFilter {
+	return MatchExactTaskWithOptions(desiredTaskNameOrAlias, false)
+}
+
+func MatchExactTaskWithOptions(desiredTaskNameOrAlias string, includeDependencies bool) TaskFilter {
 	return func(tasks []*api.Task) ([]*api.Task, error) {
 		var matchedTasks []*api.Task
 
@@ -29,8 +33,10 @@ func MatchExactTask(desiredTaskNameOrAlias string) TaskFilter {
 				continue
 			}
 
-			// Clear the task's dependencies
-			task.RequiredGroups = task.RequiredGroups[:0]
+			// Clear the task's dependencies only if explicitly requested
+			if !includeDependencies {
+				task.RequiredGroups = task.RequiredGroups[:0]
+			}
 
 			matchedTasks = append(matchedTasks, task)
 		}
