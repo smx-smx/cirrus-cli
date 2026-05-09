@@ -48,7 +48,7 @@ func (platform *WindowsPlatform) ContainerAgentImage(version string) string {
 	return platform.image
 }
 
-func (platform *WindowsPlatform) ContainerCopyCommand(populate bool) *CopyCommand {
+func (platform *WindowsPlatform) ContainerCopyCommand(populate bool, ignoreGitignore bool) *CopyCommand {
 	copyCommand := &CopyCommand{
 		CopiesAgentToDir:     "C:\\agent-volume",
 		CopiesProjectFromDir: "C:\\project-host",

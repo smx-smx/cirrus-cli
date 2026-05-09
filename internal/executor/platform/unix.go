@@ -29,7 +29,7 @@ func (platform *UnixPlatform) ContainerAgentImage(version string) string {
 	return agentImageBase + version
 }
 
-func (platform *UnixPlatform) ContainerCopyCommand(populate bool) *CopyCommand {
+func (platform *UnixPlatform) ContainerCopyCommand(populate bool, ignoreGitignore bool) *CopyCommand {
 	copyCommand := &CopyCommand{
 		CopiesAgentToDir:     "/agent-volume",
 		CopiesProjectFromDir: "/project-host",
@@ -40,8 +40,13 @@ func (platform *UnixPlatform) ContainerCopyCommand(populate bool) *CopyCommand {
 		path.Join(copyCommand.CopiesAgentToDir, workingVolumeAgentBinary))
 
 	if populate {
-		copyCmd += fmt.Sprintf(" && rsync -r --filter=':- .gitignore' %s/ %s",
-			copyCommand.CopiesProjectFromDir, copyCommand.CopiesProjectToDir)
+		if ignoreGitignore {
+			copyCmd += fmt.Sprintf(" && rsync -r %s/ %s",
+				copyCommand.CopiesProjectFromDir, copyCommand.CopiesProjectToDir)
+		} else {
+			copyCmd += fmt.Sprintf(" && rsync -r --filter=':- .gitignore' %s/ %s",
+				copyCommand.CopiesProjectFromDir, copyCommand.CopiesProjectToDir)
+		}
 	}
 
 	copyCommand.Command = []string{"/bin/sh", "-c", copyCmd}

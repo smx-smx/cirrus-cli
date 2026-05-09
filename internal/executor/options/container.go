@@ -7,9 +7,10 @@ import (
 )
 
 type ContainerOptions struct {
-	LazyPull     bool
-	NoPullImages []string
-	NoCleanup    bool
+	LazyPull       bool
+	NoPullImages   []string
+	NoCleanup      bool
+	IgnoreGitignore bool
 
 	DockerfileImageTemplate string
 	DockerfileImagePush     bool

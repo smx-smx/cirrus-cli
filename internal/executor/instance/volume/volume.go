@@ -91,7 +91,7 @@ func CreateWorkingVolume(
 		}
 	}()
 
-	copyCommand := platform.ContainerCopyCommand(!dontPopulate)
+	copyCommand := platform.ContainerCopyCommand(!dontPopulate, containerOptions.IgnoreGitignore)
 
 	// Create and start a helper container that will copy the project directory (if needed) and the agent
 	// into the working volume

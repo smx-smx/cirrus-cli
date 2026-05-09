@@ -53,6 +53,7 @@ var (
 	affectedFilesGitCachedRevision string
 	verbose                        bool
 	skipDependencies               bool
+	ignoreGitignore                bool
 )
 
 // Common instance-related flags.
@@ -230,8 +231,9 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	executorOpts = append(executorOpts, executor.WithContainerOptions(options.ContainerOptions{
-		LazyPull:  lazyPull || containerLazyPull,
-		NoCleanup: debugNoCleanup,
+		LazyPull:        lazyPull || containerLazyPull,
+		NoCleanup:       debugNoCleanup,
+		IgnoreGitignore: ignoreGitignore,
 
 		DockerfileImageTemplate: dockerfileImageTemplate,
 		DockerfileImagePush:     dockerfileImagePush,
@@ -325,6 +327,8 @@ func newRunCmd() *cobra.Command {
 		"supported values: %s", strings.Join(logs.Formats(), ", ")))
 	cmd.PersistentFlags().BoolVar(&skipDependencies, "skip-dependencies", false,
 		"when a task is specified, skip running its dependent tasks (including Dockerfile build tasks)")
+	cmd.PersistentFlags().BoolVar(&ignoreGitignore, "no-gitignore", false,
+		"copy project files but do not apply .gitignore rules (unlike --dirty, files are still copied)")
 
 	// Common instance-related flags
 	cmd.PersistentFlags().BoolVar(&lazyPull, "lazy-pull", false,

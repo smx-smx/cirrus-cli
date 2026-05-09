@@ -23,7 +23,7 @@ type CopyCommand struct {
 
 type Platform interface {
 	ContainerAgentImage(version string) string
-	ContainerCopyCommand(populate bool) *CopyCommand
+	ContainerCopyCommand(populate bool, ignoreGitignore bool) *CopyCommand
 	ContainerCLIPath() string
 	ContainerAgentVolumeDir() string
 
