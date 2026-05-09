@@ -17,8 +17,14 @@ func NewWindows(osVersion string) Platform {
 		image = "mcr.microsoft.com/windows/servercore:1709"
 	case "1803":
 		image = "mcr.microsoft.com/windows/servercore:1803"
-	default:
+	case "2019":
 		image = "mcr.microsoft.com/windows/servercore:ltsc2019"
+	case "2022":
+		image = "mcr.microsoft.com/windows/servercore:ltsc2022"
+	case "2025":
+		image = "mcr.microsoft.com/windows/servercore:ltsc2025"
+	default:
+		image = "mcr.microsoft.com/windows/servercore:" + osVersion
 	}
 
 	return &WindowsPlatform{
