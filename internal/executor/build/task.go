@@ -40,7 +40,7 @@ type Task struct {
 	Mutex sync.RWMutex
 }
 
-func NewFromProto(protoTask *api.Task, logger logger.Lightweight) (*Task, error) {
+func NewFromProto(protoTask *api.Task, logger logger.Lightweight, instanceOpts *instance.InstanceOptions) (*Task, error) {
 	const cirrusWorkingDirVariable = "${CIRRUS_WORKING_DIR}"
 
 	customWorkingDir := expander.ExpandEnvironmentVariables(cirrusWorkingDirVariable, protoTask.Environment)
@@ -50,7 +50,7 @@ func NewFromProto(protoTask *api.Task, logger logger.Lightweight) (*Task, error)
 	}
 
 	// Create an instance that this task will run on
-	inst, err := instance.NewFromProto(protoTask.Instance, protoTask.Commands, customWorkingDir, logger)
+	inst, err := instance.NewFromProto(protoTask.Instance, protoTask.Commands, customWorkingDir, logger, instanceOpts)
 	if err != nil {
 		return nil, fmt.Errorf("%w %q: %v", ErrFailedToCreateTask, protoTask.Name, err)
 	}

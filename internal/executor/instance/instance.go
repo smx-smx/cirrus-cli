@@ -27,11 +27,16 @@ var (
 	ErrUnsupportedInstance    = errors.New("unsupported instance type")
 )
 
+type InstanceOptions struct {
+	PrebuiltImageRegistry string
+}
+
 func NewFromProto(
 	anyInstance *any.Any,
 	commands []*api.Command,
 	customWorkingDir string,
 	logger logger.Lightweight,
+	opts *InstanceOptions,
 ) (abstract.Instance, error) {
 	if anyInstance == nil {
 		return &UnsupportedInstance{
@@ -87,9 +92,12 @@ func NewFromProto(
 		// PrebuiltImageInstance is currently missing the domain part to craft the full image name
 		// used in the follow-up tasks.
 		//
-		// However, since currently the only possible value is "gcr.io",
-		// we simply craft the image name manually using that hardcoded value.
-		image := path.Join("gcr.io", instance.Repository) + ":" + instance.Reference
+		// Default to gcr.io unless GitHub Actions mode is used (ghcr.io)
+		registry := "gcr.io"
+		if opts != nil && opts.PrebuiltImageRegistry != "" {
+			registry = opts.PrebuiltImageRegistry
+		}
+		image := path.Join(registry, instance.Repository) + ":" + instance.Reference
 
 		return &PrebuiltInstance{
 			Image:      image,

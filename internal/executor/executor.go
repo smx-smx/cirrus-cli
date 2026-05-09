@@ -100,7 +100,13 @@ func New(projectDir string, tasks []*api.Task, opts ...Option) (*Executor, error
 	}
 
 	// Create a build that describes what we're about to do
-	b, err := build.New(projectDir, tasks, e.logger)
+	instanceOpts := &instance.InstanceOptions{
+		PrebuiltImageRegistry: "gcr.io",
+	}
+	if e.containerOptions.GitHubActionsMode {
+		instanceOpts.PrebuiltImageRegistry = "ghcr.io"
+	}
+	b, err := build.New(projectDir, tasks, e.logger, instanceOpts)
 	if err != nil {
 		return nil, err
 	}

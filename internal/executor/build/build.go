@@ -5,6 +5,7 @@ import (
 
 	"github.com/cirruslabs/cirrus-cli/internal/executor/build/taskstatus"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/cache"
+	"github.com/cirruslabs/cirrus-cli/internal/executor/instance"
 	"github.com/cirruslabs/cirrus-cli/internal/logger"
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
 )
@@ -19,7 +20,7 @@ type Build struct {
 	tasks map[int64]*Task
 }
 
-func New(projectDir string, tasks []*api.Task, logger logger.Lightweight) (*Build, error) {
+func New(projectDir string, tasks []*api.Task, logger logger.Lightweight, instanceOpts *instance.InstanceOptions) (*Build, error) {
 	// Normalize project directory path on host as it might be
 	// simply ".", which is not suitable for bind mounting it
 	// later to the container
@@ -31,7 +32,7 @@ func New(projectDir string, tasks []*api.Task, logger logger.Lightweight) (*Buil
 	// Wrap Protocol Buffers tasks
 	wrappedTasks := make(map[int64]*Task)
 	for _, task := range tasks {
-		wrappedTask, err := NewFromProto(task, logger)
+		wrappedTask, err := NewFromProto(task, logger, instanceOpts)
 		if err != nil {
 			return nil, err
 		}
