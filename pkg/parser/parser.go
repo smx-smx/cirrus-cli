@@ -4,8 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
+	"regexp"
+	"sort"
+	"strconv"
+	"strings"
+
 	"github.com/cirruslabs/cirrus-cli/internal/executor/environment"
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
+	"github.com/cirruslabs/cirrus-cli/pkg/github"
 	"github.com/cirruslabs/cirrus-cli/pkg/larker/fs"
 	"github.com/cirruslabs/cirrus-cli/pkg/larker/fs/cachinglayer"
 	"github.com/cirruslabs/cirrus-cli/pkg/larker/fs/dummy"
@@ -26,11 +33,6 @@ import (
 	"google.golang.org/protobuf/reflect/protoregistry"
 	"google.golang.org/protobuf/types/dynamicpb"
 	"google.golang.org/protobuf/types/known/anypb"
-	"os"
-	"regexp"
-	"sort"
-	"strconv"
-	"strings"
 )
 
 const (
@@ -471,9 +473,11 @@ func (p *Parser) createServiceTask(
 	dockerfileHash string,
 	protoTask *api.Task,
 	abstractContainer abstractcontainer.AbstractContainer,
+	registry string,
+	repository string,
 ) (*api.Task, error) {
 	prebuiltInstance := &api.PrebuiltImageInstance{
-		Repository: fmt.Sprintf("cirrus-ci-community/%s", dockerfileHash),
+		Repository: fmt.Sprintf("%s/%s", repository, dockerfileHash),
 		Reference:  "latest",
 		Platform:   abstractContainer.Platform(),
 		Dockerfile: abstractContainer.Dockerfile(),
@@ -508,15 +512,22 @@ func (p *Parser) createServiceTask(
 	}
 
 	script := fmt.Sprintf("docker build "+
-		"--tag gcr.io/%s:%s "+
+		"--tag %s/%s:%s "+
 		"--file %s%s ",
-		prebuiltInstance.Repository, prebuiltInstance.Reference,
+		registry, repository, prebuiltInstance.Reference,
 		abstractContainer.Dockerfile(), dockerBuildArgs)
 
 	if abstractContainer.Platform() == api.Platform_WINDOWS {
 		script += "."
 	} else {
 		script += "${CIRRUS_DOCKER_CONTEXT:-$CIRRUS_WORKING_DIR}"
+	}
+
+	var pushScript string
+	if registry == "gcr.io" {
+		pushScript = fmt.Sprintf("gcloud docker -- push %s/%s:%s", registry, repository, prebuiltInstance.Reference)
+	} else {
+		pushScript = fmt.Sprintf("docker push %s/%s:%s", registry, repository, prebuiltInstance.Reference)
 	}
 
 	serviceTask := &api.Task{
@@ -536,8 +547,7 @@ func (p *Parser) createServiceTask(
 				Name: "push",
 				Instruction: &api.Command_ScriptInstruction{
 					ScriptInstruction: &api.ScriptInstruction{
-						Scripts: []string{fmt.Sprintf("gcloud docker -- push gcr.io/cirrus-ci-community/%s:latest",
-							dockerfileHash)},
+						Scripts: []string{pushScript},
 					},
 				},
 			},
@@ -615,10 +625,20 @@ func (p *Parser) createServiceTasks(protoTasks []*api.Task) ([]*api.Task, error)
 				parsererror.ErrInternal, protoTask.Name)
 		}
 
+		// Determine the registry and repository based on GitHub Actions mode
+		dockerfileRegistry := "gcr.io"
+		dockerfileRepository := "cirrus-ci-community"
+		ghConfig := github.GetConfig()
+		if ghConfig.IsGitHubActions {
+			dockerfileRegistry = ghConfig.Registry
+			dockerfileRepository = strings.ToLower(ghConfig.Repository)
+		}
+
 		// Find or create service task
 		serviceTask, ok := serviceTasks[dockerfileHash]
 		if !ok {
-			serviceTask, err = p.createServiceTask(dockerfileHash, protoTask, abstractContainer)
+			serviceTask, err = p.createServiceTask(dockerfileHash, protoTask, abstractContainer,
+				dockerfileRegistry, dockerfileRepository)
 			if err != nil {
 				return nil, err
 			}
@@ -630,7 +650,7 @@ func (p *Parser) createServiceTasks(protoTasks []*api.Task) ([]*api.Task, error)
 		protoTask.RequiredGroups = append(protoTask.RequiredGroups, serviceTask.LocalGroupId)
 
 		// Ensure that the task will use our to-be-created image
-		abstractContainer.SetImage(fmt.Sprintf("gcr.io/cirrus-ci-community/%s:latest", dockerfileHash))
+		abstractContainer.SetImage(fmt.Sprintf("%s/%s/%s:latest", dockerfileRegistry, dockerfileRepository, dockerfileHash))
 		updatedInstance, err := anypb.New(abstractContainer.Message())
 		if err != nil {
 			return nil, fmt.Errorf("%w: %v", parsererror.ErrInternal, err)

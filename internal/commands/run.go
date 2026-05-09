@@ -21,29 +21,21 @@ import (
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/options"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/taskfilter"
+	"github.com/cirruslabs/cirrus-cli/pkg/github"
 	"github.com/cirruslabs/cirrus-cli/pkg/larker/fs/local"
 	"github.com/cirruslabs/cirrus-cli/pkg/parser"
 	"github.com/cirruslabs/cirrus-cli/pkg/parser/parsererror"
 	"github.com/spf13/cobra"
 )
 
-const githubTokenEnvVar = "GITHUB_TOKEN"
-const ghcrTokenEnvVar = "GHCR_TOKEN"
-const githubRepoEnvVar = "GITHUB_REPOSITORY"
-const githubActionsEnvVar = "GITHUB_ACTIONS"
-const githubActorEnvVar = "GITHUB_ACTOR"
-
 const projectDir = "."
 
 var ErrRun = errors.New("run failed")
 
 func defaultDockerfileImageTemplate() string {
-	if os.Getenv(githubActionsEnvVar) == "true" {
-		repo := os.Getenv(githubRepoEnvVar)
-		if repo == "" {
-			repo = "unknown"
-		}
-		return fmt.Sprintf("ghcr.io/%s:dockerfile-%%s", strings.ToLower(repo))
+	ghConfig := github.GetConfig()
+	if ghConfig.IsGitHubActions {
+		return "ghcr.io/%s:latest"
 	}
 	return "gcr.io/cirrus-ci-community/%s:latest"
 }
@@ -215,19 +207,25 @@ func run(cmd *cobra.Command, args []string) error {
 	}
 
 	// Container-related options
-	isGithubActions := githubActions || os.Getenv(githubActionsEnvVar) == "true"
+	ghConfig := github.GetConfig()
+	isGithubActions := githubActions || ghConfig.IsGitHubActions
 
 	ghcrToken := githubToken
 	if ghcrToken == "" {
-		ghcrToken = os.Getenv(githubTokenEnvVar)
+		ghcrToken = ghConfig.Token
 	}
 
 	ghcrUsername := ""
 	if isGithubActions {
-		ghcrUsername = os.Getenv(githubActorEnvVar)
+		ghcrUsername = ghConfig.Username
 		if ghcrUsername == "" {
 			return fmt.Errorf("%w: cannot determine GitHub username", ErrRun)
 		}
+	}
+
+	ghcrReg := ghcrRegistry
+	if ghcrReg == "" {
+		ghcrReg = ghConfig.Registry
 	}
 
 	executorOpts = append(executorOpts, executor.WithContainerOptions(options.ContainerOptions{
@@ -238,7 +236,7 @@ func run(cmd *cobra.Command, args []string) error {
 		DockerfileImagePush:     dockerfileImagePush,
 
 		GitHubActionsMode: isGithubActions,
-		GHCRRegistry:      ghcrRegistry,
+		GHCRRegistry:      ghcrReg,
 		GHCRUsername:      ghcrUsername,
 		GitHubToken:       ghcrToken,
 	}))
