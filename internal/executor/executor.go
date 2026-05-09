@@ -110,12 +110,12 @@ func New(projectDir string, tasks []*api.Task, opts ...Option) (*Executor, error
 		// Transform Dockerfile image names if the user provided their own template
 		switch instanceWithImage := task.Instance.(type) {
 		case *instance.PrebuiltInstance:
-			instanceWithImage.Image, err = e.transformDockerfileImageIfNeeded(instanceWithImage.Image, true)
+			instanceWithImage.Image, err = e.transformDockerfileImageIfNeeded(instanceWithImage.Image, true, e.containerOptions.GitHubActionsMode)
 			if err != nil {
 				return nil, err
 			}
 		case *container.Instance:
-			instanceWithImage.Image, err = e.transformDockerfileImageIfNeeded(instanceWithImage.Image, false)
+			instanceWithImage.Image, err = e.transformDockerfileImageIfNeeded(instanceWithImage.Image, false, e.containerOptions.GitHubActionsMode)
 			if err != nil {
 				return nil, err
 			}
@@ -288,7 +288,7 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 	return err
 }
 
-func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict bool) (string, error) {
+func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict bool, githubActionsMode bool) (string, error) {
 	template := e.containerOptions.DockerfileImageTemplate
 
 	// No template set, return as-is
@@ -296,9 +296,18 @@ func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict boo
 		return reference, nil
 	}
 
+	// Determine which regex to use based on GitHub Actions mode
+	var re *regexp.Regexp
+	if githubActionsMode {
+		// GitHub Actions mode: ghcr.io/owner/repo/hash:latest
+		re = regexp.MustCompile(`^ghcr\.io/[^/]+/[^/]+/(.*):latest$`)
+	} else {
+		// Default GCR mode: gcr.io/cirrus-ci-community/hash:latest
+		re = regexp.MustCompile(`^gcr\.io/cirrus-ci-community/(.*):latest$`)
+	}
+
 	// Extract the already calculated hash
 	const expectedMatches = 2
-	re := regexp.MustCompile(`^gcr\.io/cirrus-ci-community/(.*):latest$`)
 	matches := re.FindStringSubmatch(reference)
 	if len(matches) != expectedMatches {
 		if strict {
