@@ -36,9 +36,12 @@ builds:
 
 archives:
   - id: binary
-    formats: binary
+    formats:
+      - binary
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
   - id: regular
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}-{{ .Os }}-{{ .Arch }}"
 
 release:
