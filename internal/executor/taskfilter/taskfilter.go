@@ -25,6 +25,12 @@ func MatchExactTaskWithOptions(desiredTaskNameOrAlias string, includeDependencie
 	return func(tasks []*api.Task) ([]*api.Task, error) {
 		var matchedTasks []*api.Task
 
+		// Build a map for quick lookup by LocalGroupId
+		taskByID := make(map[int64]*api.Task)
+		for _, task := range tasks {
+			taskByID[task.LocalGroupId] = task
+		}
+
 		for _, task := range tasks {
 			// Ensure that this task's name (or an alias) matches
 			// with the name (or an alias) that we're looking for
@@ -33,12 +39,15 @@ func MatchExactTaskWithOptions(desiredTaskNameOrAlias string, includeDependencie
 				continue
 			}
 
-			// Clear the task's dependencies only if explicitly requested
-			if !includeDependencies {
+			// Include dependencies if requested
+			if includeDependencies {
+				visited := make(map[int64]bool)
+				collectDependencies(task, taskByID, &matchedTasks, visited)
+			} else {
+				// Clear the task's dependencies
 				task.RequiredGroups = task.RequiredGroups[:0]
+				matchedTasks = append(matchedTasks, task)
 			}
-
-			matchedTasks = append(matchedTasks, task)
 		}
 
 		if len(matchedTasks) == 0 {
@@ -47,6 +56,20 @@ func MatchExactTaskWithOptions(desiredTaskNameOrAlias string, includeDependencie
 		}
 
 		return matchedTasks, nil
+	}
+}
+
+func collectDependencies(task *api.Task, taskByID map[int64]*api.Task, result *[]*api.Task, visited map[int64]bool) {
+	if visited[task.LocalGroupId] {
+		return
+	}
+	visited[task.LocalGroupId] = true
+	*result = append(*result, task)
+
+	for _, requiredGroup := range task.RequiredGroups {
+		if depTask, ok := taskByID[requiredGroup]; ok {
+			collectDependencies(depTask, taskByID, result, visited)
+		}
 	}
 }
 
