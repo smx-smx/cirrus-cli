@@ -35,7 +35,7 @@ var ErrRun = errors.New("run failed")
 func defaultDockerfileImageTemplate() string {
 	ghConfig := github.GetConfig()
 	if ghConfig.IsGitHubActions {
-		return "ghcr.io/%s:latest"
+		return "ghcr.io/%s/%s:latest"
 	}
 	return "gcr.io/cirrus-ci-community/%s:latest"
 }
@@ -230,12 +230,22 @@ func run(cmd *cobra.Command, args []string) error {
 		ghcrReg = ghConfig.Registry
 	}
 
+	// Extract owner from GITHUB_REPOSITORY (format: owner/repo)
+	var dockerfileImageOwner string
+	if isGithubActions && ghConfig.Repository != "" {
+		parts := strings.Split(ghConfig.Repository, "/")
+		if len(parts) >= 1 {
+			dockerfileImageOwner = parts[0]
+		}
+	}
+
 	executorOpts = append(executorOpts, executor.WithContainerOptions(options.ContainerOptions{
 		LazyPull:        lazyPull || containerLazyPull,
 		NoCleanup:       debugNoCleanup,
 		IgnoreGitignore: ignoreGitignore,
 
 		DockerfileImageTemplate: dockerfileImageTemplate,
+		DockerfileImageOwner:    dockerfileImageOwner,
 		DockerfileImagePush:     dockerfileImagePush,
 
 		GitHubActionsMode: isGithubActions,

@@ -13,6 +13,7 @@ type ContainerOptions struct {
 	IgnoreGitignore bool
 
 	DockerfileImageTemplate string
+	DockerfileImageOwner    string
 	DockerfileImagePush     bool
 
 	GitHubActionsMode bool

@@ -304,26 +304,38 @@ func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict boo
 
 	// Determine which regex to use based on GitHub Actions mode
 	var re *regexp.Regexp
+	var numMatches int
 	if githubActionsMode {
 		// GitHub Actions mode: ghcr.io/owner/repo/hash:latest
-		re = regexp.MustCompile(`^ghcr\.io/[^/]+/[^/]+/(.*):latest$`)
+		// Capture owner (group 1) and hash (group 2)
+		re = regexp.MustCompile(`^ghcr\.io/([^/]+)/[^/]+/(.*):latest$`)
+		numMatches = 3 // full match + owner + hash
 	} else {
 		// Default GCR mode: gcr.io/cirrus-ci-community/hash:latest
 		re = regexp.MustCompile(`^gcr\.io/cirrus-ci-community/(.*):latest$`)
+		numMatches = 2 // full match + hash
 	}
 
-	// Extract the already calculated hash
-	const expectedMatches = 2
+	// Extract components
 	matches := re.FindStringSubmatch(reference)
-	if len(matches) != expectedMatches {
+	if len(matches) != numMatches {
 		if strict {
 			return "", fmt.Errorf("%w: unknown prebuilt image format: %s", ErrBuildFailed, reference)
 		}
 
 		return reference, nil
 	}
-	hash := matches[1]
 
 	// Render the template
-	return strings.ReplaceAll(template, "%s", hash), nil
+	result := template
+	if githubActionsMode && e.containerOptions.DockerfileImageOwner != "" {
+		// Replace owner first, then hash
+		result = strings.Replace(result, "%s", e.containerOptions.DockerfileImageOwner, 1)
+		result = strings.Replace(result, "%s", matches[2], 1)
+	} else {
+		// Non-GitHub Actions mode: just replace hash
+		result = strings.ReplaceAll(result, "%s", matches[1])
+	}
+
+	return result, nil
 }
