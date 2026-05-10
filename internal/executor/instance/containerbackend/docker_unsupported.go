@@ -2,12 +2,15 @@
 
 package containerbackend
 
-import "fmt"
+import (
+	"context"
+	"fmt"
+)
 
 type Docker struct {
 	Unimplemented
 }
 
-func NewDocker() (ContainerBackend, error) {
+func NewDocker(ctx context.Context, hosts ...string) (ContainerBackend, error) {
 	return nil, fmt.Errorf("%w: Docker is only supported on Linux, macOS and Windows", ErrNewFailed)
 }

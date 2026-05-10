@@ -1,6 +1,7 @@
 package containerbackend
 
 import (
+	"context"
 	"fmt"
 	"github.com/avast/retry-go/v4"
 	"github.com/google/uuid"
@@ -40,7 +41,7 @@ func NewPodman() (*Podman, error) {
 		return nil, err
 	}
 
-	docker, err := NewDocker(socketURI)
+	docker, err := NewDocker(context.Background(), socketURI)
 	if err != nil {
 		return nil, err
 	}

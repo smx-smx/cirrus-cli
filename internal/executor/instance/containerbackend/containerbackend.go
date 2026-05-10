@@ -116,11 +116,11 @@ func New(name string) (ContainerBackend, error) {
 
 	switch name {
 	case BackendTypeDocker:
-		return NewDocker()
+		return NewDocker(context.Background())
 	case BackendTypePodman:
 		return NewPodman()
 	case BackendTypeAuto:
-		if backend, err := NewDocker(); err == nil {
+		if backend, err := NewDocker(context.Background()); err == nil {
 			return backend, nil
 		}
 

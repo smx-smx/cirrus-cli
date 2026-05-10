@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
+	"time"
 
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend/docker"
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
@@ -27,30 +29,53 @@ type Docker struct {
 	cli client.APIClient
 }
 
-func NewDocker(hosts ...string) (*Docker, error) {
+func NewDocker(ctx context.Context, hosts ...string) (*Docker, error) {
 	// Create Docker client
 	config, err := config.Load("")
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("load config: %w", err)
 	}
 
 	clientOptions := flags.NewClientOptions()
-
 	clientOptions.Hosts = hosts
 
 	cli, err := command.NewAPIClientFromFlags(clientOptions, config)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("create client: %w", err)
 	}
 
-	_, err = cli.Ping(context.Background(), client.PingOptions{})
-	if err != nil {
-		return nil, err
-	}
+	start := time.Now()
+	delay := 1 * time.Second
+	// Up to 64 seconds for the last loop iteration
+	maxDelay := 32 * time.Second
+	attempt := 1
 
-	return &Docker{
-		cli: cli,
-	}, nil
+	for {
+		// Attempt the ping
+		_, err := cli.Ping(ctx, client.PingOptions{})
+		if err == nil {
+			// Success
+			return &Docker{cli: cli}, nil
+		}
+
+		elapsed := time.Since(start).Round(time.Second)
+		log.Printf("[Attempt %d] Docker ping failed after %s: %v. Retrying in %v...",
+			attempt, elapsed, err, delay)
+
+		if delay > maxDelay {
+			return nil, fmt.Errorf("docker connection failed after %d attempts (%s elapsed): %w",
+				attempt, elapsed, err)
+		}
+
+		// Wait for the delay period OR context cancellation
+		select {
+		case <-time.After(delay):
+			attempt++
+			delay *= 2
+		case <-ctx.Done():
+			return nil, fmt.Errorf("aborted after %s: %w", time.Since(start).Round(time.Second), ctx.Err())
+		}
+	}
 }
 
 func (backend *Docker) Close() error {
