@@ -46,8 +46,8 @@ func NewDocker(ctx context.Context, hosts ...string) (*Docker, error) {
 
 	start := time.Now()
 	delay := 1 * time.Second
-	// Up to 128 seconds for the last loop iteration
-	maxDelay := 64 * time.Second
+	// Up to 64 seconds for the last loop iteration
+	maxDelay := 32 * time.Second
 	attempt := 1
 
 	for {
