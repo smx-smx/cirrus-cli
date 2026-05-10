@@ -111,10 +111,11 @@ func RunContainerizedAgent(ctx context.Context, config *runconfig.RunConfig, par
 		input.DisableSELinux = true
 	}
 
-	// Mount the  directory with the CLI's Unix domain socket in case it's used,
+	// Mount the directory with the CLI's Unix domain socket in case it's used,
 	// assuming that we run in the same mount namespace as the Docker daemon
-	if strings.HasPrefix(config.Endpoint.Container(), "unix://") {
-		socketPath := strings.TrimPrefix(config.Endpoint.Container(), "unix://")
+	if strings.HasPrefix(config.Endpoint.Container(), "unix:") {
+		socketPath := strings.TrimPrefix(config.Endpoint.Container(), "unix:")
+		socketPath = strings.TrimPrefix(socketPath, "//")
 		socketDir := filepath.Dir(socketPath)
 
 		input.Mounts = append(input.Mounts, containerbackend.ContainerMount{

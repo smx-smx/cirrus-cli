@@ -95,7 +95,7 @@ func (lis *Listener) ContainerEndpoint() string {
 // when running on the host.
 func (lis *Listener) DirectEndpoint() string {
 	if lis.listener.Addr().Network() == networkUnix {
-		return "unix://" + lis.listener.Addr().String()
+		return "unix:" + lis.listener.Addr().String()
 	}
 
 	return "http://" + lis.listener.Addr().String()
