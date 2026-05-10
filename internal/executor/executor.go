@@ -120,6 +120,9 @@ func New(projectDir string, tasks []*api.Task, opts ...Option) (*Executor, error
 			if err != nil {
 				return nil, err
 			}
+			if e.containerOptions.GitHubActionsMode {
+				instanceWithImage.ExtraTags = e.buildExtraTags(task, b.Tasks())
+			}
 		case *container.Instance:
 			instanceWithImage.Image, err = e.transformDockerfileImageIfNeeded(instanceWithImage.Image, false, e.containerOptions.GitHubActionsMode)
 			if err != nil {
@@ -338,4 +341,69 @@ func (e *Executor) transformDockerfileImageIfNeeded(reference string, strict boo
 	}
 
 	return result, nil
+}
+
+func (e *Executor) buildExtraTags(prebuilt *build.Task, allTasks []*build.Task) []string {
+	var extras []string
+	seen := make(map[string]struct{})
+
+	for _, t := range allTasks {
+		for _, reqID := range t.RequiredIDs {
+			if reqID != prebuilt.ID {
+				continue
+			}
+
+			sanitized := sanitizeImageTagName(t.Name)
+			if sanitized == "" {
+				continue
+			}
+
+			hash := extractImageHash(prebuilt.Instance.(*instance.PrebuiltInstance).Image)
+
+			human := fmt.Sprintf("%s/%s/%s-%s:latest",
+				e.containerOptions.GHCRRegistry, e.containerOptions.DockerfileImageOwner, hash, sanitized)
+			if _, ok := seen[human]; !ok {
+				seen[human] = struct{}{}
+				extras = append(extras, human)
+			}
+
+			floating := fmt.Sprintf("%s/%s/%s:latest",
+				e.containerOptions.GHCRRegistry, e.containerOptions.DockerfileImageOwner, sanitized)
+			if _, ok := seen[floating]; !ok {
+				seen[floating] = struct{}{}
+				extras = append(extras, floating)
+			}
+		}
+	}
+
+	return extras
+}
+
+func extractImageHash(image string) string {
+	// image is like "ghcr.io/owner/hash:latest"
+	parts := strings.SplitN(strings.TrimSuffix(image, ":latest"), "/", 3)
+	if len(parts) == 3 {
+		return parts[2]
+	}
+	return ""
+}
+
+func sanitizeImageTagName(name string) string {
+	var buf strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '-' || r == '_' || r == '.' {
+			buf.WriteRune(r)
+		} else {
+			buf.WriteRune('-')
+		}
+	}
+	result := strings.ToLower(buf.String())
+	result = strings.Trim(result, "-_.")
+	if result == "" {
+		return "task"
+	}
+	if len(result) > 128 {
+		result = result[:128]
+	}
+	return result
 }

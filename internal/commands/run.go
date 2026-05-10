@@ -230,12 +230,15 @@ func run(cmd *cobra.Command, args []string) error {
 		ghcrReg = ghConfig.Registry
 	}
 
-	// Extract owner from GITHUB_REPOSITORY (format: owner/repo)
-	var dockerfileImageOwner string
+	// Extract owner and repo from GITHUB_REPOSITORY (format: owner/repo)
+	var dockerfileImageOwner, dockerfileImageRepo string
 	if isGithubActions && ghConfig.Repository != "" {
 		parts := strings.Split(ghConfig.Repository, "/")
 		if len(parts) >= 1 {
 			dockerfileImageOwner = parts[0]
+		}
+		if len(parts) >= 2 {
+			dockerfileImageRepo = parts[1]
 		}
 	}
 
@@ -246,12 +249,15 @@ func run(cmd *cobra.Command, args []string) error {
 
 		DockerfileImageTemplate: dockerfileImageTemplate,
 		DockerfileImageOwner:    dockerfileImageOwner,
+		DockerfileImageRepo:     dockerfileImageRepo,
 		DockerfileImagePush:     dockerfileImagePush,
 
 		GitHubActionsMode: isGithubActions,
 		GHCRRegistry:      ghcrReg,
 		GHCRUsername:      ghcrUsername,
 		GitHubToken:       ghcrToken,
+		GitHubServerURL:   ghConfig.ServerURL,
+		GitHubSHA:         ghConfig.SHA,
 	}))
 
 	// Tart-related options

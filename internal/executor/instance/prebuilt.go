@@ -10,9 +10,11 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/runconfig"
+	"github.com/cirruslabs/cirrus-cli/internal/executor/options"
 	"go.opentelemetry.io/otel/attribute"
 )
 
@@ -20,6 +22,7 @@ type PrebuiltInstance struct {
 	Image      string
 	Dockerfile string
 	Arguments  map[string]string
+	ExtraTags  []string
 
 	containerBackend containerbackend.ContainerBackend
 }
@@ -148,11 +151,17 @@ func (prebuilt *PrebuiltInstance) Run(ctx context.Context, config *runconfig.Run
 	}()
 
 	// Build the image
+	buildLabels := make(map[string]string)
+	if containerOpts.GitHubActionsMode {
+		addOCILabels(buildLabels, prebuilt.Image, config.ContainerOptions)
+	}
 	logChan, errChan := backend.ImageBuild(ctx, file, &containerbackend.ImageBuildInput{
 		Tags:       []string{prebuilt.Image},
 		Dockerfile: prebuilt.Dockerfile,
 		BuildArgs:  prebuilt.Arguments,
 		Pull:       !config.ContainerOptions.LazyPull,
+		ExtraTags:  prebuilt.ExtraTags,
+		Labels:     buildLabels,
 	})
 
 Outer:
@@ -172,11 +181,19 @@ Outer:
 	// Push the image (if needed)
 	if config.ContainerOptions.DockerfileImagePush {
 		var auth string
-		// In GitHub Actions mode, construct auth from the token
 		if config.ContainerOptions.GitHubActionsMode && config.ContainerOptions.GitHubToken != "" {
 			auth = constructAuth(config.ContainerOptions.GHCRUsername, config.ContainerOptions.GitHubToken)
 		}
-		return backend.ImagePush(ctx, prebuilt.Image, auth)
+
+		allTags := append([]string{prebuilt.Image}, prebuilt.ExtraTags...)
+		for _, tag := range allTags {
+			if err := backend.ImagePush(ctx, tag, auth); err != nil {
+				if tag == prebuilt.Image {
+					return err
+				}
+				logger.Warnf("failed to push extra tag %s: %v", tag, err)
+			}
+		}
 	}
 
 	return nil
@@ -189,6 +206,18 @@ func constructAuth(username, password string) string {
 	}
 	authConfigJSON, _ := json.Marshal(authConfig)
 	return base64.URLEncoding.EncodeToString(authConfigJSON)
+}
+
+func addOCILabels(labels map[string]string, image string, opts options.ContainerOptions) {
+	labels["org.opencontainers.image.created"] = time.Now().UTC().Format(time.RFC3339)
+	labels["org.opencontainers.image.ref.name"] = image
+	if opts.GitHubServerURL != "" && opts.DockerfileImageRepo != "" {
+		labels["org.opencontainers.image.source"] = fmt.Sprintf("%s/%s/%s",
+			opts.GitHubServerURL, opts.DockerfileImageOwner, opts.DockerfileImageRepo)
+	}
+	if opts.GitHubSHA != "" {
+		labels["org.opencontainers.image.revision"] = opts.GitHubSHA
+	}
 }
 
 func (prebuilt *PrebuiltInstance) WorkingDirectory(projectDir string, dirtyMode bool) string {

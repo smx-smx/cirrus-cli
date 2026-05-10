@@ -14,12 +14,15 @@ type ContainerOptions struct {
 
 	DockerfileImageTemplate string
 	DockerfileImageOwner    string
+	DockerfileImageRepo     string
 	DockerfileImagePush     bool
 
 	GitHubActionsMode bool
 	GHCRRegistry      string
 	GHCRUsername      string
 	GitHubToken       string
+	GitHubServerURL   string
+	GitHubSHA         string
 }
 
 func (copts ContainerOptions) ShouldPullImage(

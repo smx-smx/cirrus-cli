@@ -178,12 +178,17 @@ func (backend *Docker) ImageBuild(
 			pointyArguments[key] = &valueCopy
 		}
 
+		allTags := make([]string, 0, len(input.Tags)+len(input.ExtraTags))
+		allTags = append(allTags, input.Tags...)
+		allTags = append(allTags, input.ExtraTags...)
+
 		buildProgress, err := backend.cli.ImageBuild(ctx, tarball, client.ImageBuildOptions{
-			Tags:       input.Tags,
+			Tags:       allTags,
 			Dockerfile: input.Dockerfile,
 			BuildArgs:  pointyArguments,
 			Remove:     true,
 			PullParent: input.Pull,
+			Labels:     input.Labels,
 		})
 		if err != nil {
 			errChan <- err
