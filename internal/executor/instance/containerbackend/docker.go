@@ -140,8 +140,8 @@ func (backend *Docker) ImageBuild(
 	tarball io.Reader,
 	input *ImageBuildInput,
 ) (<-chan string, <-chan error) {
-	logChan := make(chan string)
-	errChan := make(chan error)
+	logChan := make(chan string, 1024)
+	errChan := make(chan error, 1)
 
 	go func() {
 		// Deal with ImageBuildOptions's BuildArgs field quirks
