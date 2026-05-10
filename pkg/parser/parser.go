@@ -514,7 +514,7 @@ func (p *Parser) createServiceTask(
 	script := fmt.Sprintf("docker build "+
 		"--tag %s/%s:%s "+
 		"--file %s%s ",
-		registry, repository, prebuiltInstance.Reference,
+		registry, prebuiltInstance.Repository, prebuiltInstance.Reference,
 		abstractContainer.Dockerfile(), dockerBuildArgs)
 
 	if abstractContainer.Platform() == api.Platform_WINDOWS {
@@ -525,9 +525,9 @@ func (p *Parser) createServiceTask(
 
 	var pushScript string
 	if registry == "gcr.io" {
-		pushScript = fmt.Sprintf("gcloud docker -- push %s/%s:%s", registry, repository, prebuiltInstance.Reference)
+		pushScript = fmt.Sprintf("gcloud docker -- push %s/%s:%s", registry, prebuiltInstance.Repository, prebuiltInstance.Reference)
 	} else {
-		pushScript = fmt.Sprintf("docker push %s/%s:%s", registry, repository, prebuiltInstance.Reference)
+		pushScript = fmt.Sprintf("docker push %s/%s:%s", registry, prebuiltInstance.Repository, prebuiltInstance.Reference)
 	}
 
 	serviceTask := &api.Task{
