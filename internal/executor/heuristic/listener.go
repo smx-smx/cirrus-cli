@@ -78,7 +78,7 @@ func (lis *Listener) Addr() net.Addr {
 // when running inside of a container.
 func (lis *Listener) ContainerEndpoint() string {
 	if lis.listener.Addr().Network() == networkUnix {
-		return "unix://" + lis.listener.Addr().String()
+		return "unix:" + lis.listener.Addr().String()
 	}
 
 	// There's no host.docker.internal on Linux
