@@ -124,7 +124,7 @@ func (backend *Docker) ImagePush(ctx context.Context, reference string, auth str
 			}
 		}
 		if err := json.Unmarshal(line, &streamEntry); err != nil {
-			return err
+			return fmt.Errorf("%w (raw: %q, len: %d, hex: %x)", err, string(line), len(line), line)
 		}
 
 		if streamEntry.ErrorDetail.Message != "" {

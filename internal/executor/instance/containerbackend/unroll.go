@@ -31,7 +31,7 @@ func unrollStream(reader io.Reader, logChan chan<- string, errChan chan<- error)
 			}
 		}{}
 		if err := json.Unmarshal(line, &msg); err != nil {
-			errChan <- err
+			errChan <- fmt.Errorf("%w (raw: %q, len: %d, hex: %x)", err, string(line), len(line), line)
 			return
 		}
 
