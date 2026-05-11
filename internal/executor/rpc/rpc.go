@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
+	"net/http"
 	"strings"
 	"sync"
 	"time"
@@ -43,6 +45,9 @@ type RPC struct {
 
 	logger       *echelon.Logger
 	artifactsDir string
+
+	ghaHTTPListener net.Listener
+	ghaHTTPServer   *http.Server
 }
 
 func New(build *build.Build, opts ...Option) *RPC {
@@ -99,6 +104,32 @@ func (r *RPC) Start(ctx context.Context, address string, virtualMachine bool) er
 
 	r.logger.Debugf("gRPC server is listening at %s (%s inside of a container)",
 		r.DirectEndpoint(), r.ContainerEndpoint())
+
+	// Start HTTP server for GHA cache proxy
+	if r.ghaCacheEnabled() {
+		mux := http.NewServeMux()
+		mux.HandleFunc("/cirrus-gha-cache/download/", r.handleGHACacheDownload)
+		mux.HandleFunc("/cirrus-gha-cache/upload/", r.handleGHACacheUpload)
+		mux.HandleFunc("/cirrus-gha-cache/info/", r.handleGHACacheInfo)
+
+		httpLis, err := net.Listen("tcp", "0.0.0.0:0")
+		if err != nil {
+			return fmt.Errorf("%w: failed to start GHA cache HTTP server: %v", ErrRPCFailed, err)
+		}
+		r.ghaHTTPListener = httpLis
+		r.ghaHTTPServer = &http.Server{Handler: mux}
+
+		r.serverWaitGroup.Add(1)
+		go func() {
+			if err := r.ghaHTTPServer.Serve(httpLis); err != nil && !errors.Is(err, http.ErrServerClosed) {
+				r.logger.Errorf("GHA cache HTTP server failed: %v", err)
+			}
+			r.serverWaitGroup.Done()
+		}()
+
+		r.logger.Debugf("GHA cache HTTP server is listening on port %d",
+			httpLis.Addr().(*net.TCPAddr).Port)
+	}
 
 	return nil
 }

@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"os"
 	"strings"
@@ -18,9 +19,14 @@ import (
 const sendBufSize = 1024 * 1024
 const apiEndpointMetadataKey = "org.cirruslabs.api-endpoint"
 
-func (r *RPC) GenerateCacheUploadURL(ctx context.Context, _ *api.CacheKey) (*api.GenerateURLResponse, error) {
-	grpcEndpoint := asGRPCEndpoint(r.cacheEndpoint(ctx))
-	return &api.GenerateURLResponse{Url: grpcEndpoint}, nil
+func (r *RPC) GenerateCacheUploadURL(ctx context.Context, req *api.CacheKey) (*api.GenerateURLResponse, error) {
+	if !r.ghaCacheEnabled() {
+		grpcEndpoint := asGRPCEndpoint(r.cacheEndpoint(ctx))
+		return &api.GenerateURLResponse{Url: grpcEndpoint}, nil
+	}
+
+	cacheURL := fmt.Sprintf("%s/cirrus-gha-cache/upload/%s", r.ghaCacheHTTPBase(), req.CacheKey)
+	return &api.GenerateURLResponse{Url: cacheURL}, nil
 }
 
 func (r *RPC) Write(stream bytestream.ByteStream_WriteServer) error {
@@ -83,9 +89,15 @@ func (r *RPC) Write(stream bytestream.ByteStream_WriteServer) error {
 	return nil
 }
 
-func (r *RPC) GenerateCacheDownloadURLs(ctx context.Context, _ *api.CacheKey) (*api.GenerateURLsResponse, error) {
-	grpcEndpoint := asGRPCEndpoint(r.cacheEndpoint(ctx))
-	return &api.GenerateURLsResponse{Urls: []string{grpcEndpoint}}, nil
+func (r *RPC) GenerateCacheDownloadURLs(ctx context.Context, req *api.CacheKey) (*api.GenerateURLsResponse, error) {
+	if !r.ghaCacheEnabled() {
+		grpcEndpoint := asGRPCEndpoint(r.cacheEndpoint(ctx))
+		return &api.GenerateURLsResponse{Urls: []string{grpcEndpoint}}, nil
+	}
+
+	httpEndpoint := r.ghaCacheHTTPBase()
+	cacheURL := fmt.Sprintf("%s/cirrus-gha-cache/download/%s", httpEndpoint, req.CacheKey)
+	return &api.GenerateURLsResponse{Urls: []string{cacheURL}}, nil
 }
 
 func (r *RPC) cacheEndpoint(ctx context.Context) string {
@@ -154,6 +166,10 @@ func (r *RPC) Read(req *bytestream.ReadRequest, stream bytestream.ByteStream_Rea
 func (r *RPC) CacheInfo(ctx context.Context, req *api.CacheInfoRequest) (*api.CacheInfoResponse, error) {
 	if _, err := r.taskFromMetadata(ctx); err != nil {
 		return nil, err
+	}
+
+	if r.ghaCacheEnabled() {
+		return r.ghaCacheInfo(ctx, req)
 	}
 
 	r.logger.Debugf("sending info about cache key %s", req.CacheKey)
