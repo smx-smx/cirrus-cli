@@ -83,41 +83,38 @@ func decodeBackendIDs(token string) (string, string, error) {
 }
 
 type createArtifactRequest struct {
-	WorkflowRunBackendID  string       `json:"workflowRunBackendId"`
-	WorkflowJobRunBackendID string     `json:"workflowJobRunBackendId"`
-	Name                  string       `json:"name"`
-	MimeType              *stringValue `json:"mimeType"`
-	Version               int          `json:"version"`
-}
-
-type stringValue struct {
-	Value string `json:"value"`
+	Version                 int    `json:"version"`
+	Name                    string `json:"name"`
+	WorkflowRunBackendID    string `json:"workflow_run_backend_id"`
+	WorkflowJobRunBackendID string `json:"workflow_job_run_backend_id"`
+	MimeType                string `json:"mime_type"`
+	ExpiresAfter            string `json:"expires_after,omitempty"`
 }
 
 type createArtifactResponse struct {
 	Ok              bool   `json:"ok"`
-	SignedUploadURL string `json:"signedUploadUrl"`
+	SignedUploadURL string `json:"signed_upload_url"`
 }
 
 type finalizeArtifactRequest struct {
-	WorkflowRunBackendID  string       `json:"workflowRunBackendId"`
-	WorkflowJobRunBackendID string     `json:"workflowJobRunBackendId"`
-	Name                  string       `json:"name"`
-	Size                  string       `json:"size"`
-	Hash                  *stringValue `json:"hash,omitempty"`
+	Name                    string `json:"name"`
+	Size                    int64  `json:"size"`
+	Hash                    string `json:"hash,omitempty"`
+	WorkflowRunBackendID    string `json:"workflow_run_backend_id"`
+	WorkflowJobRunBackendID string `json:"workflow_job_run_backend_id"`
 }
 
 type finalizeArtifactResponse struct {
-	Ok         bool   `json:"ok"`
-	ArtifactID string `json:"artifactId"`
+	Ok         bool  `json:"ok"`
+	ArtifactID int64 `json:"artifact_id,string"`
 }
 
 func (c *GHAClient) CreateArtifact(name string) (*createArtifactResponse, error) {
 	req := createArtifactRequest{
-		WorkflowRunBackendID:  c.runBackendID,
+		WorkflowRunBackendID:    c.runBackendID,
 		WorkflowJobRunBackendID: c.jobBackendID,
 		Name:     name,
-		MimeType: &stringValue{Value: "application/zip"},
+		MimeType: "application/zip",
 		Version:  7,
 	}
 
@@ -159,14 +156,11 @@ func (c *GHAClient) UploadBlob(signedURL string, reader io.Reader, size int64, s
 
 func (c *GHAClient) FinalizeArtifact(name string, size int64, hash string) error {
 	req := finalizeArtifactRequest{
-		WorkflowRunBackendID:  c.runBackendID,
+		WorkflowRunBackendID:    c.runBackendID,
 		WorkflowJobRunBackendID: c.jobBackendID,
 		Name: name,
-		Size: fmt.Sprintf("%d", size),
-	}
-
-	if hash != "" {
-		req.Hash = &stringValue{Value: hash}
+		Size: size,
+		Hash: hash,
 	}
 
 	resp := &finalizeArtifactResponse{}
