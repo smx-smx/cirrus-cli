@@ -12,7 +12,12 @@ import (
 
 type UploadResult struct {
 	Uploaded []string
-	Failed   []string
+	Failed   []UploadFailure
+}
+
+type UploadFailure struct {
+	TaskName string
+	Err      error
 }
 
 func UploadArtifactsFromDir(ctx context.Context, artifactsDir string) (*UploadResult, error) {
@@ -48,7 +53,7 @@ func UploadArtifactsFromDir(ctx context.Context, artifactsDir string) (*UploadRe
 		}
 
 		if err := uploadTaskArtifacts(client, taskName, taskDir); err != nil {
-			result.Failed = append(result.Failed, taskName)
+			result.Failed = append(result.Failed, UploadFailure{TaskName: taskName, Err: err})
 			continue
 		}
 

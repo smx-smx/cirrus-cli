@@ -128,6 +128,7 @@ func TestUploadArtifactsFromDirNoEnv(t *testing.T) {
 	result, err := UploadArtifactsFromDir(t.Context(), dir)
 	assert.NoError(t, err)
 	assert.Empty(t, result.Uploaded)
+	assert.Empty(t, result.Failed)
 }
 
 func TestUploadArtifactsFromDirMissingEnv(t *testing.T) {
@@ -137,6 +138,7 @@ func TestUploadArtifactsFromDirMissingEnv(t *testing.T) {
 	result, err := UploadArtifactsFromDir(t.Context(), dir)
 	assert.NoError(t, err)
 	assert.Empty(t, result.Uploaded)
+	assert.Empty(t, result.Failed)
 }
 
 func TestUploadArtifactsFromDirHasSubdirsNoEnv(t *testing.T) {

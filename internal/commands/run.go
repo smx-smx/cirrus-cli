@@ -307,7 +307,7 @@ func run(cmd *cobra.Command, args []string) error {
 				logger.Infof("uploaded artifact '%s' to GitHub Actions", name)
 			}
 			for _, name := range result.Failed {
-				logger.Warnf("failed to upload artifact '%s' to GitHub Actions", name)
+				logger.Warnf("failed to upload artifact '%s' to GitHub Actions: %v", name.TaskName, name.Err)
 			}
 		}
 	}
