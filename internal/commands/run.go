@@ -286,7 +286,16 @@ func run(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	return e.Run(cmd.Context())
+	err = e.Run(cmd.Context())
+
+	// In GitHub Actions mode, upload collected artifacts to GHA
+	if err == nil && artifactsDir != "" && github.IsGitHubActions() {
+		if uploadErr := github.UploadArtifactsFromDir(context.Background(), artifactsDir, logger); uploadErr != nil {
+			logger.Warnf("failed to upload artifacts to GitHub Actions: %v", uploadErr)
+		}
+	}
+
+	return err
 }
 
 func newRunCmd() *cobra.Command {

@@ -3,12 +3,14 @@ package github
 import "os"
 
 const (
-	EnvGitHubActions     = "GITHUB_ACTIONS"
-	EnvGitHubRepository  = "GITHUB_REPOSITORY"
-	EnvGitHubToken       = "GITHUB_TOKEN"
-	EnvGitHubActor       = "GITHUB_ACTOR"
-	EnvGitHubServerURL   = "GITHUB_SERVER_URL"
-	EnvGitHubSHA         = "GITHUB_SHA"
+	EnvGitHubActions      = "GITHUB_ACTIONS"
+	EnvGitHubRepository   = "GITHUB_REPOSITORY"
+	EnvGitHubToken        = "GITHUB_TOKEN"
+	EnvGitHubActor        = "GITHUB_ACTOR"
+	EnvGitHubServerURL    = "GITHUB_SERVER_URL"
+	EnvGitHubSHA          = "GITHUB_SHA"
+	EnvResultsURL         = "ACTIONS_RESULTS_URL"
+	EnvRuntimeToken       = "ACTIONS_RUNTIME_TOKEN"
 
 	DefaultRegistry = "ghcr.io"
 )
