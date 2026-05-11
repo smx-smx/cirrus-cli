@@ -86,7 +86,7 @@ type createArtifactRequest struct {
 	WorkflowRunBackendID  string       `json:"workflowRunBackendId"`
 	WorkflowJobRunBackendID string     `json:"workflowJobRunBackendId"`
 	Name                  string       `json:"name"`
-	MimeType              *stringValue `json:"mimeType,omitempty"`
+	MimeType              *stringValue `json:"mimeType"`
 	Version               int          `json:"version"`
 }
 
@@ -116,8 +116,9 @@ func (c *GHAClient) CreateArtifact(name string) (*createArtifactResponse, error)
 	req := createArtifactRequest{
 		WorkflowRunBackendID:  c.runBackendID,
 		WorkflowJobRunBackendID: c.jobBackendID,
-		Name:    name,
-		Version: 7,
+		Name:     name,
+		MimeType: &stringValue{Value: "application/zip"},
+		Version:  7,
 	}
 
 	resp := &createArtifactResponse{}
