@@ -10,14 +10,21 @@ import (
 	"path/filepath"
 )
 
-func UploadArtifactsFromDir(ctx context.Context, artifactsDir string, logger interface{ Warnf(string, ...interface{}) }) error {
+type UploadResult struct {
+	Uploaded []string
+	Failed   []string
+}
+
+func UploadArtifactsFromDir(ctx context.Context, artifactsDir string) (*UploadResult, error) {
 	entries, err := os.ReadDir(artifactsDir)
 	if err != nil {
-		return fmt.Errorf("failed to read artifacts directory: %w", err)
+		return nil, fmt.Errorf("failed to read artifacts directory: %w", err)
 	}
 
+	result := &UploadResult{}
+
 	if len(entries) == 0 {
-		return nil
+		return result, nil
 	}
 
 	var client *GHAClient
@@ -36,23 +43,19 @@ func UploadArtifactsFromDir(ctx context.Context, artifactsDir string, logger int
 		if client == nil {
 			client, err = NewGHAClient()
 			if err != nil {
-				return fmt.Errorf("failed to create GHA artifact client: %w", err)
+				return nil, fmt.Errorf("failed to create GHA artifact client: %w", err)
 			}
 		}
 
-		if err := uploadTaskArtifacts(client, taskName, taskDir, logger); err != nil {
-			if logger != nil {
-				logger.Warnf("failed to upload artifacts for task %s: %v", taskName, err)
-			}
+		if err := uploadTaskArtifacts(client, taskName, taskDir); err != nil {
+			result.Failed = append(result.Failed, taskName)
 			continue
 		}
 
-		if logger != nil {
-			logger.Warnf("uploaded GHA artifact for task %s", taskName)
-		}
+		result.Uploaded = append(result.Uploaded, taskName)
 	}
 
-	return nil
+	return result, nil
 }
 
 func dirHasFiles(dir string) bool {
@@ -70,7 +73,7 @@ func dirHasFiles(dir string) bool {
 	return found
 }
 
-func uploadTaskArtifacts(client *GHAClient, taskName, taskDir string, logger interface{ Warnf(string, ...interface{}) }) error {
+func uploadTaskArtifacts(client *GHAClient, taskName, taskDir string) error {
 	tmpFile, err := os.CreateTemp("", "cirrus-gha-artifact-*.zip")
 	if err != nil {
 		return err

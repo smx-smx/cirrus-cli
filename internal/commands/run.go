@@ -187,11 +187,6 @@ func run(cmd *cobra.Command, args []string) error {
 		executorOpts = append(executorOpts, executor.WithTaskFilter(taskFilter))
 	}
 
-	// Artifacts directory
-	if artifactsDir != "" {
-		executorOpts = append(executorOpts, executor.WithArtifactsDir(artifactsDir))
-	}
-
 	// Dirty mode
 	if dirty {
 		executorOpts = append(executorOpts, executor.WithDirtyMode())
@@ -211,6 +206,20 @@ func run(cmd *cobra.Command, args []string) error {
 	// Container-related options
 	ghConfig := github.GetConfig()
 	isGithubActions := githubActions || ghConfig.IsGitHubActions
+
+	// In GitHub Actions mode, auto-create a temp artifacts directory
+	// so collected artifacts can be uploaded to GHA without --artifacts-dir.
+	if artifactsDir == "" && isGithubActions {
+		tmpDir, err := os.MkdirTemp("", "cirrus-artifacts-")
+		if err != nil {
+			return fmt.Errorf("%w: failed to create temp artifacts dir: %v", ErrRun, err)
+		}
+		defer os.RemoveAll(tmpDir)
+		artifactsDir = tmpDir
+	}
+	if artifactsDir != "" {
+		executorOpts = append(executorOpts, executor.WithArtifactsDir(artifactsDir))
+	}
 
 	ghcrToken := githubToken
 	if ghcrToken == "" {
@@ -290,8 +299,16 @@ func run(cmd *cobra.Command, args []string) error {
 
 	// In GitHub Actions mode, upload collected artifacts to GHA
 	if err == nil && artifactsDir != "" && github.IsGitHubActions() {
-		if uploadErr := github.UploadArtifactsFromDir(context.Background(), artifactsDir, logger); uploadErr != nil {
+		result, uploadErr := github.UploadArtifactsFromDir(context.Background(), artifactsDir)
+		if uploadErr != nil {
 			logger.Warnf("failed to upload artifacts to GitHub Actions: %v", uploadErr)
+		} else {
+			for _, name := range result.Uploaded {
+				logger.Infof("uploaded artifact '%s' to GitHub Actions", name)
+			}
+			for _, name := range result.Failed {
+				logger.Warnf("failed to upload artifact '%s' to GitHub Actions", name)
+			}
 		}
 	}
 

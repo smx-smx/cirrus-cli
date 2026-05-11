@@ -21,7 +21,6 @@ func TestDecodeBackendIDs(t *testing.T) {
 }
 
 func TestDecodeBackendIDsMultipleScopes(t *testing.T) {
-	// payload: {"scp":"Actions.OtherScope Actions.Results:aaa:bbb Actions.ThirdScope"}
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"scp":"Actions.OtherScope Actions.Results:aaa:bbb Actions.ThirdScope"}`))
 	token := "header." + payload + ".dummy"
 
@@ -32,7 +31,6 @@ func TestDecodeBackendIDsMultipleScopes(t *testing.T) {
 }
 
 func TestDecodeBackendIDsMissingScope(t *testing.T) {
-	// payload: {"scp":"Actions.OtherScope"}
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"scp":"Actions.OtherScope"}`))
 	token := "header." + payload + ".dummy"
 
@@ -42,7 +40,6 @@ func TestDecodeBackendIDsMissingScope(t *testing.T) {
 }
 
 func TestDecodeBackendIDsInvalidScopeFormat(t *testing.T) {
-	// payload: {"scp":"Actions.Results:only-two"}
 	payload := base64.RawURLEncoding.EncodeToString([]byte(`{"scp":"Actions.Results:only-two"}`))
 	token := "header." + payload + ".dummy"
 
@@ -64,14 +61,12 @@ func TestDecodeBackendIDsInvalidBase64(t *testing.T) {
 }
 
 func TestDecodeBackendIDsInvalidJSON(t *testing.T) {
-	// base64 of "not-json"
 	_, _, err := decodeBackendIDs("header.bm90LWpzb24.sig")
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "failed to parse JWT claims")
 }
 
 func TestDecodeBackendIDsNoScpClaim(t *testing.T) {
-	// payload: {"other":"value"}  → eyJvdGhlciI6InZhbHVlIn0
 	token := "header.eyJvdGhlciI6InZhbHVlIn0.sig"
 	_, _, err := decodeBackendIDs(token)
 	assert.Error(t, err)
@@ -81,14 +76,11 @@ func TestDecodeBackendIDsNoScpClaim(t *testing.T) {
 func TestDirHasFiles(t *testing.T) {
 	dir := t.TempDir()
 
-	// empty dir
 	assert.False(t, dirHasFiles(dir))
 
-	// dir with a file
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello"), 0600))
 	assert.True(t, dirHasFiles(dir))
 
-	// dir with only subdirectory
 	emptyDir := t.TempDir()
 	require.NoError(t, os.Mkdir(filepath.Join(emptyDir, "subdir"), 0700))
 	assert.False(t, dirHasFiles(emptyDir))
@@ -111,7 +103,6 @@ func TestZipDir(t *testing.T) {
 	assert.True(t, size > 0)
 	assert.Contains(t, hash, "sha256:")
 
-	// Verify the zip is valid and contains expected entries
 	zipFile.Seek(0, 0)
 	filesInZip, err := listZipEntries(zipFile.Name())
 	require.NoError(t, err)
@@ -129,25 +120,23 @@ func TestZipDirEmpty(t *testing.T) {
 
 	hash, _, err := zipDir(dir, zipFile)
 	require.NoError(t, err)
-	// Empty zip should have minimal size (just the central directory)
 	assert.NotEmpty(t, hash)
 }
 
 func TestUploadArtifactsFromDirNoEnv(t *testing.T) {
-	// Without ACTIONS_RESULTS_URL / ACTIONS_RUNTIME_TOKEN, this should return
-	// nil (no artifacts to upload for an empty dir)
 	dir := t.TempDir()
-	err := UploadArtifactsFromDir(t.Context(), dir, nil)
+	result, err := UploadArtifactsFromDir(t.Context(), dir)
 	assert.NoError(t, err)
+	assert.Empty(t, result.Uploaded)
 }
 
 func TestUploadArtifactsFromDirMissingEnv(t *testing.T) {
 	dir := t.TempDir()
-	// File at top level, not in a subdirectory — skipped
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "test.txt"), []byte("hello"), 0600))
 
-	err := UploadArtifactsFromDir(t.Context(), dir, nil)
+	result, err := UploadArtifactsFromDir(t.Context(), dir)
 	assert.NoError(t, err)
+	assert.Empty(t, result.Uploaded)
 }
 
 func TestUploadArtifactsFromDirHasSubdirsNoEnv(t *testing.T) {
@@ -156,21 +145,9 @@ func TestUploadArtifactsFromDirHasSubdirsNoEnv(t *testing.T) {
 	require.NoError(t, os.MkdirAll(taskDir, 0700))
 	require.NoError(t, os.WriteFile(filepath.Join(taskDir, "data.txt"), []byte("hello"), 0600))
 
-	var warnings []string
-	logger := testLogger{warnings: &warnings}
-
-	err := UploadArtifactsFromDir(t.Context(), dir, &logger)
+	_, err := UploadArtifactsFromDir(t.Context(), dir)
 	assert.Error(t, err)
 	assert.ErrorContains(t, err, "ACTIONS_RESULTS_URL")
-	assert.Empty(t, warnings)
-}
-
-type testLogger struct {
-	warnings *[]string
-}
-
-func (l *testLogger) Warnf(format string, args ...interface{}) {
-	*l.warnings = append(*l.warnings, format)
 }
 
 func listZipEntries(zipPath string) ([]string, error) {
