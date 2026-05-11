@@ -95,6 +95,7 @@ func TestBuildExtraTags(t *testing.T) {
 			GitHubActionsMode:    true,
 			GHCRRegistry:         "ghcr.io",
 			DockerfileImageOwner: "myorg",
+			DockerfileImageRepo:  "myrepo",
 		},
 	}
 
@@ -133,10 +134,10 @@ func TestBuildExtraTags(t *testing.T) {
 	sort.Strings(got)
 
 	want := []string{
-		"ghcr.io/myorg/abc123-linux_test:latest",
-		"ghcr.io/myorg/abc123-windows_x64:latest",
-		"ghcr.io/myorg/linux_test:latest",
-		"ghcr.io/myorg/windows_x64:latest",
+		"ghcr.io/myorg/myrepo/abc123-linux_test:latest",
+		"ghcr.io/myorg/myrepo/abc123-windows_x64:latest",
+		"ghcr.io/myorg/myrepo/linux_test:latest",
+		"ghcr.io/myorg/myrepo/windows_x64:latest",
 	}
 	sort.Strings(want)
 
@@ -172,6 +173,7 @@ func TestBuildExtraTagsDuplicateDependents(t *testing.T) {
 			GitHubActionsMode:    true,
 			GHCRRegistry:         "ghcr.io",
 			DockerfileImageOwner: "myorg",
+			DockerfileImageRepo:  "myrepo",
 		},
 	}
 
@@ -204,8 +206,8 @@ func TestBuildExtraTagsDuplicateDependents(t *testing.T) {
 
 	// Duplicate-named dependents should only produce one set of tags
 	want := []string{
-		"ghcr.io/myorg/abc123-test_task:latest",
-		"ghcr.io/myorg/test_task:latest",
+		"ghcr.io/myorg/myrepo/abc123-test_task:latest",
+		"ghcr.io/myorg/myrepo/test_task:latest",
 	}
 	sort.Strings(want)
 

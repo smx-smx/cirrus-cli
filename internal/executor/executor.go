@@ -360,15 +360,17 @@ func (e *Executor) buildExtraTags(prebuilt *build.Task, allTasks []*build.Task) 
 
 			hash := extractImageHash(prebuilt.Instance.(*instance.PrebuiltInstance).Image)
 
-			human := fmt.Sprintf("%s/%s/%s-%s:latest",
-				e.containerOptions.GHCRRegistry, e.containerOptions.DockerfileImageOwner, hash, sanitized)
+			human := fmt.Sprintf("%s/%s/%s/%s-%s:latest",
+				e.containerOptions.GHCRRegistry, e.containerOptions.DockerfileImageOwner,
+				e.containerOptions.DockerfileImageRepo, hash, sanitized)
 			if _, ok := seen[human]; !ok {
 				seen[human] = struct{}{}
 				extras = append(extras, human)
 			}
 
-			floating := fmt.Sprintf("%s/%s/%s:latest",
-				e.containerOptions.GHCRRegistry, e.containerOptions.DockerfileImageOwner, sanitized)
+			floating := fmt.Sprintf("%s/%s/%s/%s:latest",
+				e.containerOptions.GHCRRegistry, e.containerOptions.DockerfileImageOwner,
+				e.containerOptions.DockerfileImageRepo, sanitized)
 			if _, ok := seen[floating]; !ok {
 				seen[floating] = struct{}{}
 				extras = append(extras, floating)
