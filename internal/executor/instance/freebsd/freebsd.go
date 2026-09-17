@@ -242,11 +242,12 @@ func (inst *Instance) boot(ctx context.Context, rawImage string) error {
 		"-serial", fmt.Sprintf("file:%s", inst.serialLog),
 	}
 
-	if _, err := os.Stat("/dev/kvm"); err == nil {
+	if kvmAvailable() {
 		args = append(args, "-accel", "kvm", "-cpu", "host")
 	} else {
-		// No KVM on GitHub-hosted runners (and other virtualized CI),
-		// fall back to multi-threaded TCG emulation.
+		// No usable KVM (absent, or present but not permitted, as on
+		// GitHub-hosted runners where /dev/kvm exists yet opening it
+		// fails) — fall back to multi-threaded TCG emulation.
 		args = append(args, "-accel", "tcg,thread=multi")
 	}
 
@@ -365,10 +366,21 @@ func qemuVersion() string {
 }
 
 func accelDescription() string {
-	if _, err := os.Stat("/dev/kvm"); err == nil {
+	if kvmAvailable() {
 		return "kvm"
 	}
 	return "tcg"
+}
+
+// kvmAvailable probes usability, not mere existence: on GitHub-hosted
+// runners /dev/kvm exists but opening it fails with Permission denied.
+func kvmAvailable() bool {
+	file, err := os.OpenFile("/dev/kvm", os.O_RDWR, 0)
+	if err != nil {
+		return false
+	}
+	_ = file.Close()
+	return true
 }
 
 func (inst *Instance) imageDescription() string {
