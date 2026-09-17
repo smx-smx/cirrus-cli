@@ -1,0 +1,5 @@
+freebsd_task:
+  freebsd_instance:
+    cpu: 2
+
+  script: uname -a

@@ -540,6 +540,16 @@ func TestViaRPCInvalid(t *testing.T) {
 			"validation-missingDependency.yml",
 			"parsing error: there's no task 'fooo', but task 'bar' depends on it",
 		},
+		{
+			"freebsd-ambiguity.yml",
+			"parsing error: 2:3: please either use image_family: or image_name:, " +
+				"since otherwise there's ambiguity about which image to prefer",
+		},
+		{
+			"freebsd-no-image.yml",
+			"parsing error: 2:3: freebsd_instance needs either \"image_family:\" or " +
+				"\"image_name:\" to be specified",
+		},
 	}
 
 	for _, testCase := range invalidCases {
@@ -668,6 +678,32 @@ func TestWithMissingInstancesAllowed(t *testing.T) {
 
 	assert.Len(t, result.Tasks, 1)
 	assert.Nil(t, result.Tasks[0].Instance)
+}
+
+func TestFreeBSDInstance(t *testing.T) {
+	config := `
+freebsd_task:
+  freebsd_instance:
+    image_family: freebsd-14-4
+    cpu: 4
+    memory: 8G
+
+  script: uname -a
+`
+
+	p := parser.New(parser.WithMissingInstancesAllowed())
+	result, err := p.Parse(context.Background(), config)
+	require.NoError(t, err)
+	require.Len(t, result.Tasks, 1)
+
+	task := result.Tasks[0]
+	assert.Equal(t, "freebsd", task.Name)
+	assert.Nil(t, task.Instance)
+	assert.Equal(t, "freebsd", task.Environment["CIRRUS_OS"])
+	assert.Equal(t, "freebsd-14-4", task.Environment["CIRRUS_FREEBSD_IMAGE_FAMILY"])
+	assert.Equal(t, "", task.Environment["CIRRUS_FREEBSD_IMAGE_NAME"])
+	assert.Equal(t, "4", task.Environment["CIRRUS_FREEBSD_CPU"])
+	assert.Equal(t, "8192", task.Environment["CIRRUS_FREEBSD_MEMORY"])
 }
 
 var repeatedKeysYAML = `

@@ -2527,6 +2527,27 @@
           },
           "type": "object"
         },
+        "freebsd_instance": {
+          "description": "FreeBSD Virtual Machine definition (runs under QEMU when executed via the CLI).",
+          "properties": {
+            "cpu": {
+              "type": "number"
+            },
+            "image_family": {
+              "description": "FreeBSD image family to use (e.g. freebsd-14-4).",
+              "type": "string"
+            },
+            "image_name": {
+              "description": "Concrete FreeBSD image to use (a full HTTPS URL to a .raw.xz image).",
+              "type": "string"
+            },
+            "memory": {
+              "pattern": "\\d+(G|Mb)?",
+              "type": "string"
+            }
+          },
+          "type": "object"
+        },
         "macos_instance": {
           "description": "MacOS VM definition.",
           "properties": {
@@ -3539,6 +3560,27 @@
       "description": "Map represented as an object.",
       "patternProperties": {
         ".*": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "freebsd_instance": {
+      "description": "FreeBSD Virtual Machine definition (runs under QEMU when executed via the CLI).",
+      "properties": {
+        "cpu": {
+          "type": "number"
+        },
+        "image_family": {
+          "description": "FreeBSD image family to use (e.g. freebsd-14-4).",
+          "type": "string"
+        },
+        "image_name": {
+          "description": "Concrete FreeBSD image to use (a full HTTPS URL to a .raw.xz image).",
+          "type": "string"
+        },
+        "memory": {
+          "pattern": "\\d+(G|Mb)?",
           "type": "string"
         }
       },

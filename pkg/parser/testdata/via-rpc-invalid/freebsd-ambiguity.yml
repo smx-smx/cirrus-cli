@@ -1,0 +1,6 @@
+freebsd_task:
+  freebsd_instance:
+    image_family: freebsd-14-4
+    image_name: FreeBSD-14.4-RELEASE-amd64-BASIC-CI.raw.xz
+
+  script: uname -a

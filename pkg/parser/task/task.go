@@ -212,6 +212,38 @@ func NewTask(
 		)
 	}
 
+	if _, ok := additionalInstances["freebsd_instance"]; !ok {
+		task.CollectibleInstanceField("freebsd_instance",
+			instance.NewFreeBSD(environment.Merge(task.proto.Environment, env), parserKit).Schema(),
+			func(node *node.Node) error {
+				task.instanceNode = node
+
+				inst := instance.NewFreeBSD(environment.Merge(task.proto.Environment, env), parserKit)
+				if err := inst.Parse(node, parserKit); err != nil {
+					return err
+				}
+
+				// There is no FreeBSD message in the API schema (on Cirrus Cloud
+				// freebsd_instance was resolved server-side into a GCE VM), so the
+				// definition is recorded in the task environment for the executor,
+				// which boots the VM itself (under QEMU).
+				//
+				// The proto instance is deliberately left empty.
+				freebsdEnv, err := inst.Environment()
+				if err != nil {
+					return err
+				}
+				task.proto.Environment = environment.Merge(
+					task.proto.Environment,
+					map[string]string{"CIRRUS_OS": "freebsd"},
+					freebsdEnv,
+				)
+
+				return nil
+			},
+		)
+	}
+
 	for instanceName, descriptor := range additionalInstances {
 		scopedInstanceName := instanceName
 		scopedDescriptor := descriptor
