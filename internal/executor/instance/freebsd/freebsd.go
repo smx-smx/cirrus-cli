@@ -35,6 +35,11 @@ import (
 
 var ErrFailed = errors.New("freebsd instance failed")
 
+// ErrQemuExited marks boot failures where QEMU died on its own (as opposed
+// to timing out while still running); callers use it to decide on a retry
+// with different acceleration.
+var ErrQemuExited = errors.New("qemu exited")
+
 var _ abstract.Instance = (*Instance)(nil)
 
 // SSH credentials to try, in order.
@@ -172,15 +177,43 @@ func (inst *Instance) Run(ctx context.Context, config *runconfig.RunConfig) erro
 	config.Logger().Infof("booting FreeBSD (%s, %s, %d CPU, %d MiB) under QEMU %s...",
 		inst.imageDescription(), accelDescription(), inst.config.CPU, inst.config.Memory, qemuVersion())
 
-	if err := inst.boot(ctx, rawImage); err != nil {
-		return err
+	// Try KVM first when usable (much faster than emulation), automatically
+	// falling back to TCG if QEMU dies right away (e.g. nested virt denied).
+	// /dev/kvm merely existing proves nothing: on GitHub-hosted runners it
+	// exists but the runner user cannot open it until a udev rule widens it:
+	//   echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+	//   sudo udevadm control --reload-rules && sudo udevadm trigger --name-match=kvm
+	accels := []string{"tcg"}
+	if kvmAvailable() {
+		accels = []string{"kvm", "tcg"}
+	} else if kvmPresentButUnusable() {
+		config.Logger().Infof("/dev/kvm exists but cannot be opened (need a udev rule like above), using TCG emulation...")
 	}
 
+	var sshUser, sshPass string
+	booted := false
 	addr := fmt.Sprintf("127.0.0.1:%d", sshPort)
+	for _, accel := range accels {
+		if err := inst.boot(ctx, rawImage, accel); err != nil {
+			return err
+		}
 
-	sshUser, sshPass, err := inst.waitForSSH(ctx, addr, config)
-	if err != nil {
+		var err error
+		sshUser, sshPass, err = inst.waitForSSH(ctx, addr, accel, config)
+		if err == nil {
+			booted = true
+			break
+		}
+
+		if accel == "kvm" && errors.Is(err, ErrQemuExited) {
+			config.Logger().Infof("KVM acceleration failed, falling back to TCG emulation...")
+			continue
+		}
+
 		return err
+	}
+	if !booted {
+		return fmt.Errorf("%w: exhausted acceleration methods", ErrFailed)
 	}
 	inst.sshUser, inst.sshPass = sshUser, sshPass
 
@@ -229,7 +262,7 @@ func (inst *Instance) Close(ctx context.Context) error {
 
 // boot starts QEMU with user-mode networking (host-forwarded SSH) and a
 // throwaway snapshot overlay, so the cached image is never modified.
-func (inst *Instance) boot(ctx context.Context, rawImage string) error {
+func (inst *Instance) boot(ctx context.Context, rawImage string, accel string) error {
 	args := []string{
 		"-m", strconv.FormatUint(uint64(inst.config.Memory), 10),
 		"-smp", strconv.Itoa(inst.config.CPU),
@@ -242,12 +275,11 @@ func (inst *Instance) boot(ctx context.Context, rawImage string) error {
 		"-serial", fmt.Sprintf("file:%s", inst.serialLog),
 	}
 
-	if kvmAvailable() {
+	if accel == "kvm" {
 		args = append(args, "-accel", "kvm", "-cpu", "host")
 	} else {
-		// No usable KVM (absent, or present but not permitted, as on
-		// GitHub-hosted runners where /dev/kvm exists yet opening it
-		// fails) — fall back to multi-threaded TCG emulation.
+		// Multi-threaded TCG emulation for hosts without (usable) KVM,
+		// e.g. virtualized CI runners.
 		args = append(args, "-accel", "tcg,thread=multi")
 	}
 
@@ -283,7 +315,7 @@ func (inst *Instance) boot(ctx context.Context, rawImage string) error {
 // QEMU's own stderr and the guest serial log tails are attached to every
 // failure, since both live in the work directory that is removed on Close
 // and would otherwise be lost with the runner.
-func (inst *Instance) waitForSSH(ctx context.Context, addr string, config *runconfig.RunConfig) (string, string, error) {
+func (inst *Instance) waitForSSH(ctx context.Context, addr string, accel string, config *runconfig.RunConfig) (string, string, error) {
 	bootCtx, bootCancel := context.WithTimeoutCause(ctx, bootTimeout,
 		fmt.Errorf("timed out waiting for SSH on %s", addr))
 	defer bootCancel()
@@ -293,11 +325,15 @@ func (inst *Instance) waitForSSH(ctx context.Context, addr string, config *runco
 			tailFile(inst.serialLog, 80, 8192), tailFile(inst.stderrLog, 40, 4096))
 	}
 
+	earlyExit := func(waitErr error) (string, string, error) {
+		return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (accel %s, exit: %v):\n%s",
+			ErrQemuExited, accel, waitErr, diag())
+	}
+
 	for {
 		select {
 		case waitErr := <-inst.qemuWait:
-			return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (exit: %v):\n%s",
-				ErrFailed, waitErr, diag())
+			return earlyExit(waitErr)
 		default:
 		}
 
@@ -315,8 +351,7 @@ func (inst *Instance) waitForSSH(ctx context.Context, addr string, config *runco
 
 			select {
 			case waitErr := <-inst.qemuWait:
-				return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (exit: %v):\n%s",
-					ErrFailed, waitErr, diag())
+				return earlyExit(waitErr)
 			case <-bootCtx.Done():
 				return "", "", fmt.Errorf("%w: %v:\n%s",
 					ErrFailed, context.Cause(bootCtx), diag())
@@ -326,8 +361,7 @@ func (inst *Instance) waitForSSH(ctx context.Context, addr string, config *runco
 
 		select {
 		case waitErr := <-inst.qemuWait:
-			return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (exit: %v):\n%s",
-				ErrFailed, waitErr, diag())
+			return earlyExit(waitErr)
 		case <-bootCtx.Done():
 			return "", "", fmt.Errorf("%w: %v:\n%s",
 				ErrFailed, context.Cause(bootCtx), diag())
@@ -381,6 +415,15 @@ func kvmAvailable() bool {
 	}
 	_ = file.Close()
 	return true
+}
+
+// kvmPresentButUnusable reports the case worth hinting about: the device
+// node exists, so nested virtualization might be one udev rule away.
+func kvmPresentButUnusable() bool {
+	if _, err := os.Stat("/dev/kvm"); err != nil {
+		return false
+	}
+	return !kvmAvailable()
 }
 
 func (inst *Instance) imageDescription() string {
