@@ -297,9 +297,13 @@ func run(cmd *cobra.Command, args []string) error {
 
 	err = e.Run(cmd.Context())
 
-	// In GitHub Actions mode, upload collected artifacts to GHA
-	if err == nil && artifactsDir != "" && github.IsGitHubActions() {
-		result, uploadErr := github.UploadArtifactsFromDir(context.Background(), artifactsDir)
+	// In GitHub Actions mode, upload collected artifacts to GHA.
+	// Note: upload even when tasks failed, since artifacts (e.g. test
+	// results, binaries) are most valuable for debugging failures,
+	// mirroring Cirrus CI behavior where artifacts are collected
+	// regardless of task status.
+	if artifactsDir != "" && isGithubActions {
+		result, uploadErr := github.UploadArtifactsFromDir(cmd.Context(), artifactsDir)
 		if uploadErr != nil {
 			logger.Warnf("failed to upload artifacts to GitHub Actions: %v", uploadErr)
 		} else {
