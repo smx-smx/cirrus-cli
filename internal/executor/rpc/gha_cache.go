@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"io"
 	"net"
@@ -17,7 +18,14 @@ import (
 	"google.golang.org/grpc/status"
 )
 
-const ghaCacheVersion = "1"
+// ghaCacheVersion namespaces Cirrus cache entries on the GHA cache service.
+//
+// It mirrors the official client's shape: a 64-char hex digest (there, a
+// hash of paths/compression/salt). The service rejects other shapes despite
+// its "between 1 and 64 characters" message, so don't simplify this to "1".
+// The Cirrus cache key already distinguishes entries; the version only
+// namespaces our entries away from other clients.
+var ghaCacheVersion = fmt.Sprintf("%x", sha256.Sum256([]byte("cirrus-cli-gha-cache/v1")))
 
 func (r *RPC) ghaCacheEnabled() bool {
 	return os.Getenv("GITHUB_ACTIONS") == "true" && os.Getenv("ACTIONS_RESULTS_URL") != ""
