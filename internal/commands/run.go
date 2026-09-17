@@ -32,14 +32,6 @@ const projectDir = "."
 
 var ErrRun = errors.New("run failed")
 
-func defaultDockerfileImageTemplate() string {
-	ghConfig := github.GetConfig()
-	if ghConfig.IsGitHubActions {
-		return "ghcr.io/%s/%s:latest"
-	}
-	return "gcr.io/cirrus-ci-community/%s:latest"
-}
-
 // General flags.
 var (
 	artifactsDir                   string
@@ -251,12 +243,24 @@ func run(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Resolve the Dockerfile image template at run time (not flag-definition
+	// time) so --github-actions works even without GITHUB_ACTIONS=true in
+	// the environment. An explicit --dockerfile-image-template always wins.
+	effectiveDockerfileImageTemplate := dockerfileImageTemplate
+	if effectiveDockerfileImageTemplate == "" {
+		if isGithubActions {
+			effectiveDockerfileImageTemplate = "ghcr.io/%s/%s:latest"
+		} else {
+			effectiveDockerfileImageTemplate = "gcr.io/cirrus-ci-community/%s:latest"
+		}
+	}
+
 	executorOpts = append(executorOpts, executor.WithContainerOptions(options.ContainerOptions{
 		LazyPull:        lazyPull || containerLazyPull,
 		NoCleanup:       debugNoCleanup,
 		IgnoreGitignore: ignoreGitignore,
 
-		DockerfileImageTemplate: dockerfileImageTemplate,
+		DockerfileImageTemplate: effectiveDockerfileImageTemplate,
 		DockerfileImageOwner:    dockerfileImageOwner,
 		DockerfileImageRepo:     dockerfileImageRepo,
 		DockerfileImagePush:     dockerfileImagePush,
@@ -394,7 +398,8 @@ func newRunCmd() *cobra.Command {
 
 	// Container-related flags: Dockerfile as CI environment feature
 	cmd.PersistentFlags().StringVar(&dockerfileImageTemplate, "dockerfile-image-template",
-		defaultDockerfileImageTemplate(), "image that Dockerfile as CI environment feature should produce")
+		"", "image that Dockerfile as CI environment feature should produce "+
+			"(defaults to ghcr.io/%s/%s:latest on GitHub Actions, gcr.io/cirrus-ci-community/%s:latest otherwise)")
 	cmd.PersistentFlags().BoolVar(&dockerfileImagePush, "dockerfile-image-push",
 		false, "whether to push the image produced by the Dockerfile as CI environment feature")
 
