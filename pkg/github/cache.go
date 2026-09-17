@@ -2,14 +2,12 @@ package github
 
 import (
 	"bytes"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
-	"strings"
 )
 
 const cacheServicePath = "github.actions.results.api.v1.CacheService"
@@ -33,8 +31,6 @@ func NewGHACacheClient() (*GHACacheClient, error) {
 
 	// ACTIONS_RESULTS_URL contains a path prefix (e.g. /v2/runs/...),
 	// so strip it down to scheme://host like the artifact client does.
-	// Otherwise the Twirp URL becomes <prefix>/twirp/... and CacheService
-	// calls always fail, silently disabling the Cirrus cache translation.
 	u, err := url.Parse(resultsURL)
 	if err != nil {
 		return nil, fmt.Errorf("invalid %s: %w", EnvResultsURL, err)
@@ -47,73 +43,51 @@ func NewGHACacheClient() (*GHACacheClient, error) {
 	}, nil
 }
 
-type cacheScope struct {
-	Scope      string `json:"scope"`
-	Permission string `json:"permission"`
-}
-
-type cacheMetadata struct {
-	RepositoryID string       `json:"repository_id"`
-	Scopes       []cacheScope `json:"scope"`
-}
+// The request shapes below mirror the official @actions/cache Twirp client
+// (protobuf field names, JSON encoding). Notably, no metadata is sent: the
+// service derives the repository and scopes from the Bearer token. Sending
+// metadata with mistyped fields (e.g. repository_id as a string) makes the
+// service reject the call with HTTP 400 "malformed".
 
 type createCacheEntryRequest struct {
-	Metadata cacheMetadata `json:"metadata"`
-	Key      string        `json:"key"`
-	Version  string        `json:"version"`
+	Key     string `json:"key"`
+	Version string `json:"version"`
 }
 
 type createCacheEntryResponse struct {
 	Ok              bool   `json:"ok"`
 	SignedUploadURL string `json:"signed_upload_url"`
+	Message         string `json:"message"`
 }
 
 type getDownloadURLRequest struct {
-	Metadata    cacheMetadata `json:"metadata"`
-	Key         string        `json:"key"`
-	RestoreKeys []string      `json:"restore_keys"`
-	Version     string        `json:"version"`
+	Key         string   `json:"key"`
+	RestoreKeys []string `json:"restore_keys"`
+	Version     string   `json:"version"`
 }
 
 type getDownloadURLResponse struct {
-	Ok                 bool   `json:"ok"`
-	SignedDownloadURL  string `json:"signed_download_url"`
-	MatchedKey         string `json:"matched_key"`
+	Ok                bool   `json:"ok"`
+	SignedDownloadURL string `json:"signed_download_url"`
+	MatchedKey        string `json:"matched_key"`
 }
 
 type finalizeUploadRequest struct {
-	Metadata  cacheMetadata `json:"metadata"`
-	Key       string        `json:"key"`
-	SizeBytes int64         `json:"size_bytes"`
-	Version   string        `json:"version"`
+	Key       string `json:"key"`
+	SizeBytes int64  `json:"size_bytes"`
+	Version   string `json:"version"`
 }
 
 type finalizeUploadResponse struct {
-	Ok      bool  `json:"ok"`
-	EntryID int64 `json:"entry_id"`
-}
-
-func (c *GHACacheClient) metadata() cacheMetadata {
-	var scopes []cacheScope
-
-	scopesFromJWT := parseCacheScopes(c.runtimeToken)
-	if scopesFromJWT != nil {
-		scopes = scopesFromJWT
-	}
-
-	repoID := os.Getenv("GITHUB_REPOSITORY_ID")
-
-	return cacheMetadata{
-		RepositoryID: repoID,
-		Scopes:       scopes,
-	}
+	Ok      bool   `json:"ok"`
+	EntryID int64  `json:"entry_id,string"`
+	Message string `json:"message"`
 }
 
 func (c *GHACacheClient) CreateCacheEntry(key, version string) (*createCacheEntryResponse, error) {
 	req := createCacheEntryRequest{
-		Metadata: c.metadata(),
-		Key:      key,
-		Version:  version,
+		Key:     key,
+		Version: version,
 	}
 
 	resp := &createCacheEntryResponse{}
@@ -122,7 +96,7 @@ func (c *GHACacheClient) CreateCacheEntry(key, version string) (*createCacheEntr
 	}
 
 	if !resp.Ok {
-		return nil, fmt.Errorf("CreateCacheEntry: response from backend was not ok")
+		return nil, fmt.Errorf("CreateCacheEntry: response from backend was not ok: %s", resp.Message)
 	}
 
 	return resp, nil
@@ -130,10 +104,12 @@ func (c *GHACacheClient) CreateCacheEntry(key, version string) (*createCacheEntr
 
 func (c *GHACacheClient) GetCacheEntryDownloadURL(key, version string, restoreKeys []string) (*getDownloadURLResponse, error) {
 	req := getDownloadURLRequest{
-		Metadata:    c.metadata(),
 		Key:         key,
 		RestoreKeys: restoreKeys,
 		Version:     version,
+	}
+	if req.RestoreKeys == nil {
+		req.RestoreKeys = []string{}
 	}
 
 	resp := &getDownloadURLResponse{}
@@ -150,7 +126,6 @@ func (c *GHACacheClient) GetCacheEntryDownloadURL(key, version string, restoreKe
 
 func (c *GHACacheClient) FinalizeCacheEntryUpload(key, version string, sizeBytes int64) error {
 	req := finalizeUploadRequest{
-		Metadata:  c.metadata(),
 		Key:       key,
 		SizeBytes: sizeBytes,
 		Version:   version,
@@ -162,7 +137,7 @@ func (c *GHACacheClient) FinalizeCacheEntryUpload(key, version string, sizeBytes
 	}
 
 	if !resp.Ok {
-		return fmt.Errorf("FinalizeCacheEntryUpload: response from backend was not ok")
+		return fmt.Errorf("FinalizeCacheEntryUpload: response from backend was not ok: %s", resp.Message)
 	}
 
 	return nil
@@ -204,42 +179,4 @@ func (c *GHACacheClient) twirpCall(method string, req, resp interface{}) error {
 	}
 
 	return nil
-}
-
-func parseCacheScopes(token string) []cacheScope {
-	parts := strings.Split(token, ".")
-	if len(parts) != 3 {
-		return nil
-	}
-
-	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return nil
-	}
-
-	var claims struct {
-		Scp string `json:"scp"`
-	}
-	if err := json.Unmarshal(payload, &claims); err != nil {
-		return nil
-	}
-
-	var scopes []cacheScope
-	for _, scope := range strings.Split(claims.Scp, " ") {
-		if !strings.Contains(scope, ":") {
-			continue
-		}
-
-		parts := strings.SplitN(scope, ":", 2)
-		scopes = append(scopes, cacheScope{
-			Scope:      parts[0],
-			Permission: parts[1],
-		})
-	}
-
-	if len(scopes) == 0 {
-		return nil
-	}
-
-	return scopes
 }

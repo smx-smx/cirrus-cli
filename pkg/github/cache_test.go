@@ -1,81 +1,45 @@
 package github
 
 import (
-	"encoding/base64"
+	"encoding/json"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
-func TestParseCacheScopes(t *testing.T) {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(
-		`{"scp":"Cache.Read:12345 Cache.Write:67890"}`,
-	))
-	token := "header." + payload + ".sig"
+// The service derives repository/scopes from the Bearer token (like the
+// official @actions/cache client, which sends no metadata), so the requests
+// must not contain a metadata object at all.
+func TestCacheRequestShapes(t *testing.T) {
+	createBytes, err := json.Marshal(createCacheEntryRequest{Key: "k", Version: "1"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"key":"k","version":"1"}`, string(createBytes))
 
-	scopes := parseCacheScopes(token)
-	require.NotNil(t, scopes)
-	require.Len(t, scopes, 2)
-	assert.Equal(t, "Cache.Read", scopes[0].Scope)
-	assert.Equal(t, "12345", scopes[0].Permission)
-	assert.Equal(t, "Cache.Write", scopes[1].Scope)
-	assert.Equal(t, "67890", scopes[1].Permission)
+	downloadBytes, err := json.Marshal(getDownloadURLRequest{Key: "k", RestoreKeys: []string{}, Version: "1"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"key":"k","restore_keys":[],"version":"1"}`, string(downloadBytes))
+
+	finalizeBytes, err := json.Marshal(finalizeUploadRequest{Key: "k", SizeBytes: 42, Version: "1"})
+	require.NoError(t, err)
+	assert.JSONEq(t, `{"key":"k","size_bytes":42,"version":"1"}`, string(finalizeBytes))
 }
 
-func TestParseCacheScopesMultipleActionsResults(t *testing.T) {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(
-		`{"scp":"Actions.Results:run:job Cache.ReadWrite:11111"}`,
-	))
-	token := "header." + payload + ".sig"
+func TestCacheResponseShapes(t *testing.T) {
+	var createResp createCacheEntryResponse
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"ok":true,"signed_upload_url":"https://example.invalid/u","message":""}`), &createResp))
+	assert.True(t, createResp.Ok)
+	assert.Equal(t, "https://example.invalid/u", createResp.SignedUploadURL)
 
-	scopes := parseCacheScopes(token)
-	require.NotNil(t, scopes)
-	require.Len(t, scopes, 2)
-	assert.Equal(t, "Actions.Results", scopes[0].Scope)
-	assert.Equal(t, "run:job", scopes[0].Permission)
-	assert.Equal(t, "Cache.ReadWrite", scopes[1].Scope)
-	assert.Equal(t, "11111", scopes[1].Permission)
-}
+	var downloadResp getDownloadURLResponse
+	require.NoError(t, json.Unmarshal([]byte(
+		`{"ok":true,"signed_download_url":"https://example.invalid/d","matched_key":"k"}`), &downloadResp))
+	assert.True(t, downloadResp.Ok)
+	assert.Equal(t, "k", downloadResp.MatchedKey)
 
-func TestParseCacheScopesNoCacheScope(t *testing.T) {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(
-		`{"scp":"Actions.Results:run:job"}`,
-	))
-	token := "header." + payload + ".sig"
-
-	scopes := parseCacheScopes(token)
-	require.NotNil(t, scopes)
-	require.Len(t, scopes, 1)
-	assert.Equal(t, "Actions.Results", scopes[0].Scope)
-}
-
-func TestParseCacheScopesEmptyScp(t *testing.T) {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(
-		`{"scp":""}`,
-	))
-	token := "header." + payload + ".sig"
-
-	scopes := parseCacheScopes(token)
-	assert.Nil(t, scopes)
-}
-
-func TestParseCacheScopesNoScpClaim(t *testing.T) {
-	payload := base64.RawURLEncoding.EncodeToString([]byte(
-		`{"other":"value"}`,
-	))
-	token := "header." + payload + ".sig"
-
-	scopes := parseCacheScopes(token)
-	assert.Nil(t, scopes)
-}
-
-func TestParseCacheScopesInvalidToken(t *testing.T) {
-	scopes := parseCacheScopes("not-a-jwt")
-	assert.Nil(t, scopes)
-}
-
-func TestParseCacheScopesInvalidPayload(t *testing.T) {
-	scopes := parseCacheScopes("header.!!!bad!!!.sig")
-	assert.Nil(t, scopes)
+	var finalizeResp finalizeUploadResponse
+	require.NoError(t, json.Unmarshal([]byte(`{"ok":true,"entry_id":"123"}`), &finalizeResp))
+	assert.True(t, finalizeResp.Ok)
+	assert.Equal(t, int64(123), finalizeResp.EntryID)
 }
