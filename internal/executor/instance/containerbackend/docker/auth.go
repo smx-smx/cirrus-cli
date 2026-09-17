@@ -22,5 +22,6 @@ func XRegistryAuthForImage(reference string) (string, error) {
 		return "", err
 	}
 
-	return base64.URLEncoding.EncodeToString(authConfigJSON), nil
+	// Docker expects standard base64 (not URL-safe) for X-Registry-Auth.
+	return base64.StdEncoding.EncodeToString(authConfigJSON), nil
 }

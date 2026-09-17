@@ -205,7 +205,8 @@ func constructAuth(username, password string) string {
 		"password": password,
 	}
 	authConfigJSON, _ := json.Marshal(authConfig)
-	return base64.URLEncoding.EncodeToString(authConfigJSON)
+	// Docker expects standard base64 (not URL-safe) for X-Registry-Auth.
+	return base64.StdEncoding.EncodeToString(authConfigJSON)
 }
 
 func addOCILabels(labels map[string]string, image string, opts options.ContainerOptions) {
