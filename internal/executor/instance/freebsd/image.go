@@ -226,10 +226,8 @@ func fetchChecksum(ctx context.Context, checksumURL string, archiveName string) 
 
 	scanner := bufio.NewScanner(resp.Body)
 	for scanner.Scan() {
-		fields := strings.Fields(scanner.Text())
-		// Format: "<sha256>  <filename>"
-		if len(fields) == 2 && fields[1] == archiveName {
-			return fields[0], nil
+		if hash, ok := matchChecksumLine(scanner.Text(), archiveName); ok {
+			return hash, nil
 		}
 	}
 	if err := scanner.Err(); err != nil {
@@ -237,6 +235,26 @@ func fetchChecksum(ctx context.Context, checksumURL string, archiveName string) 
 	}
 
 	return "", fmt.Errorf("%w: no checksum found for %s in %s", ErrFailed, archiveName, checksumURL)
+}
+
+// matchChecksumLine matches both checksum file flavors in the wild:
+// GNU coreutils ("<sha256>  <filename>") and BSD ("SHA256 (<filename>) = <sha256>",
+// which is what download.freebsd.org ships).
+func matchChecksumLine(line string, archiveName string) (string, bool) {
+	fields := strings.Fields(line)
+
+	// GNU: "<sha256>  <filename>"
+	if len(fields) == 2 && fields[1] == archiveName {
+		return fields[0], true
+	}
+
+	// BSD: "SHA256 (<filename>) = <sha256>"
+	if len(fields) == 4 && fields[0] == "SHA256" &&
+		strings.Trim(fields[1], "()") == archiveName && fields[2] == "=" {
+		return fields[3], true
+	}
+
+	return "", false
 }
 
 func verifySHA256(filePath string, expectedHex string) error {

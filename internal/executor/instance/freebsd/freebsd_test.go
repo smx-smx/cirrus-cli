@@ -42,6 +42,28 @@ func TestResolveImageURLBareName(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestMatchChecksumLine(t *testing.T) {
+	// BSD flavor, as shipped by download.freebsd.org
+	hash, ok := matchChecksumLine(
+		"SHA256 (FreeBSD-14.4-RELEASE-amd64-BASIC-CI.raw.xz) = 627937af554eb6522891875ddc8cf5b86b40e9a12143c1b951f830b3f691de49",
+		"FreeBSD-14.4-RELEASE-amd64-BASIC-CI.raw.xz")
+	require.True(t, ok)
+	assert.Equal(t, "627937af554eb6522891875ddc8cf5b86b40e9a12143c1b951f830b3f691de49", hash)
+
+	// GNU coreutils flavor
+	hash, ok = matchChecksumLine(
+		"627937af554eb6522891875ddc8cf5b86b40e9a12143c1b951f830b3f691de49  FreeBSD-14.4-RELEASE-amd64-BASIC-CI.raw.xz",
+		"FreeBSD-14.4-RELEASE-amd64-BASIC-CI.raw.xz")
+	require.True(t, ok)
+	assert.Equal(t, "627937af554eb6522891875ddc8cf5b86b40e9a12143c1b951f830b3f691de49", hash)
+
+	// Other files don't match
+	_, ok = matchChecksumLine(
+		"SHA256 (FreeBSD-14.4-RELEASE-amd64-BASIC-CI-ufs.raw.xz) = 627937af554eb6522891875ddc8cf5b86b40e9a12143c1b951f830b3f691de49",
+		"FreeBSD-14.4-RELEASE-amd64-BASIC-CI.raw.xz")
+	assert.False(t, ok)
+}
+
 func TestConfigFromEnvironment(t *testing.T) {
 	_, ok := ConfigFromEnvironment(map[string]string{})
 	assert.False(t, ok)
