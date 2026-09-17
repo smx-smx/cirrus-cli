@@ -302,10 +302,11 @@ func run(cmd *cobra.Command, args []string) error {
 	err = e.Run(cmd.Context())
 
 	// In GitHub Actions mode, upload collected artifacts to GHA.
-	// Note: upload even when tasks failed, since artifacts (e.g. test
-	// results, binaries) are most valuable for debugging failures,
-	// mirroring Cirrus CI behavior where artifacts are collected
-	// regardless of task status.
+	// Note: upload even when tasks failed. The agent already enforces
+	// Cirrus execution semantics (ON_SUCCESS by default, always:/on_failure:
+	// when requested), so artifactsDir contains exactly what Cirrus CI would
+	// store — including always: artifacts from failed tasks. Gating on
+	// err == nil would drop those, diverging from Cirrus CI.
 	if artifactsDir != "" && isGithubActions {
 		result, uploadErr := github.UploadArtifactsFromDir(cmd.Context(), artifactsDir)
 		if uploadErr != nil {
