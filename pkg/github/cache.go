@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 )
@@ -30,8 +31,17 @@ func NewGHACacheClient() (*GHACacheClient, error) {
 		return nil, fmt.Errorf("%s is not set", EnvRuntimeToken)
 	}
 
+	// ACTIONS_RESULTS_URL contains a path prefix (e.g. /v2/runs/...),
+	// so strip it down to scheme://host like the artifact client does.
+	// Otherwise the Twirp URL becomes <prefix>/twirp/... and CacheService
+	// calls always fail, silently disabling the Cirrus cache translation.
+	u, err := url.Parse(resultsURL)
+	if err != nil {
+		return nil, fmt.Errorf("invalid %s: %w", EnvResultsURL, err)
+	}
+
 	return &GHACacheClient{
-		baseURL:      resultsURL,
+		baseURL:      u.Scheme + "://" + u.Host,
 		runtimeToken: token,
 		httpClient:   &http.Client{},
 	}, nil
