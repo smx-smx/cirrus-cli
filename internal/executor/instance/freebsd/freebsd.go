@@ -19,6 +19,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/abstract"
@@ -103,10 +104,12 @@ type Instance struct {
 
 	workDir   string
 	qemuCmd   *exec.Cmd
+	qemuWait  chan error
 	sshPort   int
 	sshUser   string
 	sshPass   string
 	serialLog string
+	stderrLog string
 }
 
 func New(config Config, log logger.Lightweight) (*Instance, error) {
@@ -158,12 +161,16 @@ func (inst *Instance) Run(ctx context.Context, config *runconfig.RunConfig) erro
 	}
 	inst.workDir = workDir
 	inst.serialLog = filepath.Join(workDir, "serial.log")
+	inst.stderrLog = filepath.Join(workDir, "qemu-stderr.log")
 
 	sshPort, err := freePort()
 	if err != nil {
 		return err
 	}
 	inst.sshPort = sshPort
+
+	config.Logger().Infof("booting FreeBSD (%s, %s, %d CPU, %d MiB) under QEMU %s...",
+		inst.imageDescription(), accelDescription(), inst.config.CPU, inst.config.Memory, qemuVersion())
 
 	if err := inst.boot(ctx, rawImage); err != nil {
 		return err
@@ -207,8 +214,8 @@ func (inst *Instance) Run(ctx context.Context, config *runconfig.RunConfig) erro
 
 func (inst *Instance) Close(ctx context.Context) error {
 	if inst.qemuCmd != nil && inst.qemuCmd.Process != nil {
+		// The waiter goroutine reaps the process; just signal it.
 		_ = inst.qemuCmd.Process.Kill()
-		_, _ = inst.qemuCmd.Process.Wait()
 		inst.qemuCmd = nil
 	}
 
@@ -245,17 +252,25 @@ func (inst *Instance) boot(ctx context.Context, rawImage string) error {
 
 	inst.logger.Debugf("starting qemu-system-x86_64 with arguments: %v", args)
 
+	stderrFile, err := os.Create(inst.stderrLog)
+	if err != nil {
+		return fmt.Errorf("%w: failed to create QEMU stderr log: %v", ErrFailed, err)
+	}
+	defer stderrFile.Close()
+
 	//nolint:gosec // argument list is constructed above from validated config
 	cmd := exec.CommandContext(ctx, "qemu-system-x86_64", args...)
+	cmd.Stderr = stderrFile
 
 	if err := cmd.Start(); err != nil {
 		return fmt.Errorf("%w: failed to start QEMU: %v", ErrFailed, err)
 	}
 
 	inst.qemuCmd = cmd
+	inst.qemuWait = make(chan error, 1)
 
 	go func() {
-		_ = cmd.Wait()
+		inst.qemuWait <- cmd.Wait()
 	}()
 
 	return nil
@@ -263,12 +278,28 @@ func (inst *Instance) boot(ctx context.Context, rawImage string) error {
 
 // waitForSSH cycles through the known BASIC-CI credentials until one opens
 // an SSH session or the boot timeout expires.
+//
+// QEMU's own stderr and the guest serial log tails are attached to every
+// failure, since both live in the work directory that is removed on Close
+// and would otherwise be lost with the runner.
 func (inst *Instance) waitForSSH(ctx context.Context, addr string, config *runconfig.RunConfig) (string, string, error) {
 	bootCtx, bootCancel := context.WithTimeoutCause(ctx, bootTimeout,
 		fmt.Errorf("timed out waiting for SSH on %s", addr))
 	defer bootCancel()
 
+	diag := func() string {
+		return fmt.Sprintf("serial log tail:\n%s\nQEMU stderr tail:\n%s",
+			tailFile(inst.serialLog, 80, 8192), tailFile(inst.stderrLog, 40, 4096))
+	}
+
 	for {
+		select {
+		case waitErr := <-inst.qemuWait:
+			return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (exit: %v):\n%s",
+				ErrFailed, waitErr, diag())
+		default:
+		}
+
 		for _, creds := range sshCredentials {
 			attemptCtx, attemptCancel := context.WithTimeout(bootCtx, 20*time.Second)
 
@@ -282,20 +313,69 @@ func (inst *Instance) waitForSSH(ctx context.Context, addr string, config *runco
 			}
 
 			select {
+			case waitErr := <-inst.qemuWait:
+				return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (exit: %v):\n%s",
+					ErrFailed, waitErr, diag())
 			case <-bootCtx.Done():
-				return "", "", fmt.Errorf("%w: %v (serial log: %s)",
-					ErrFailed, context.Cause(bootCtx), inst.serialLog)
+				return "", "", fmt.Errorf("%w: %v:\n%s",
+					ErrFailed, context.Cause(bootCtx), diag())
 			default:
 			}
 		}
 
 		select {
+		case waitErr := <-inst.qemuWait:
+			return "", "", fmt.Errorf("%w: QEMU exited before SSH came up (exit: %v):\n%s",
+				ErrFailed, waitErr, diag())
 		case <-bootCtx.Done():
-			return "", "", fmt.Errorf("%w: %v (serial log: %s)",
-				ErrFailed, context.Cause(bootCtx), inst.serialLog)
+			return "", "", fmt.Errorf("%w: %v:\n%s",
+				ErrFailed, context.Cause(bootCtx), diag())
 		case <-time.After(3 * time.Second):
 		}
 	}
+}
+
+// tailFile returns the last lines of a log file (capped), for failure diagnostics.
+func tailFile(path string, maxLines int, maxBytes int) string {
+	contents, err := os.ReadFile(path)
+	if err != nil {
+		return "(no log yet)"
+	}
+
+	if len(contents) > maxBytes {
+		contents = contents[len(contents)-maxBytes:]
+	}
+
+	lines := strings.Split(string(contents), "\n")
+	if len(lines) > maxLines {
+		lines = lines[len(lines)-maxLines:]
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func qemuVersion() string {
+	out, err := exec.Command("qemu-system-x86_64", "--version").Output()
+	if err != nil {
+		return "unknown"
+	}
+
+	line, _, _ := strings.Cut(string(out), "\n")
+	return strings.TrimSpace(line)
+}
+
+func accelDescription() string {
+	if _, err := os.Stat("/dev/kvm"); err == nil {
+		return "kvm"
+	}
+	return "tcg"
+}
+
+func (inst *Instance) imageDescription() string {
+	if inst.config.ImageName != "" {
+		return inst.config.ImageName
+	}
+	return inst.config.ImageFamily
 }
 
 func freePort() (int, error) {
