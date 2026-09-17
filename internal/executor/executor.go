@@ -7,6 +7,7 @@ import (
 	"io"
 	"path/filepath"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 	"time"
@@ -190,6 +191,19 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 	if e.artifactsDir != "" && pathsafe.IsPathSafe(task.Name) {
 		taskSpecificArtifactsDir := filepath.Join(e.artifactsDir, task.Name)
 		rpcOpts = append(rpcOpts, rpc.WithArtifactsDir(taskSpecificArtifactsDir))
+	}
+
+	// Architecture-aware routing (see arch.go): on a single runner, skip tasks
+	// built for another CPU instead of failing them, mirroring how the cloud
+	// scheduler only places tasks on matching hosts.
+	if arch, ok := taskArch(task, e.build.Tasks()); ok && !hostSupportsArch(arch) {
+		taskLogger := e.logger.Scoped(task.UniqueDescription())
+		taskLogger.Warnf("skipping: task requires %s but the host runs %s/%s "+
+			"(no matching runner or binfmt emulation)",
+			arch.String(), runtime.GOOS, runtime.GOARCH)
+		taskLogger.FinishWithType(echelon.FinishTypeSkipped)
+		task.SetStatus(taskstatus.Skipped)
+		return nil
 	}
 
 	// Provide more information for RPC address heuristics
