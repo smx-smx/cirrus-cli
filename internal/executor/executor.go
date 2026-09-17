@@ -18,6 +18,7 @@ import (
 	"github.com/cirruslabs/cirrus-cli/internal/executor/environment"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/container"
+	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/freebsd"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/persistentworker/isolation/vetu"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/runconfig"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/options"
@@ -130,6 +131,20 @@ func New(projectDir string, tasks []*api.Task, opts ...Option) (*Executor, error
 			}
 		}
 
+		// FreeBSD tasks carry no proto instance (freebsd_instance is resolved
+		// server-side on Cirrus Cloud and has no API message), so boot them
+		// under QEMU instead of skipping them. This is automatic: no flags or
+		// workflow changes needed, on GitHub Actions or elsewhere.
+		if _, ok := task.Instance.(*instance.UnsupportedInstance); ok {
+			if freeBSDConfig, ok := freebsd.ConfigFromEnvironment(task.Environment); ok {
+				freeBSDInstance, err := freebsd.New(freeBSDConfig, e.logger)
+				if err != nil {
+					return nil, err
+				}
+				task.Instance = freeBSDInstance
+			}
+		}
+
 		// Collect images that shouldn't be pulled under any circumstances
 		if prebuiltInstance, ok := task.Instance.(*instance.PrebuiltInstance); ok {
 			e.containerOptions.NoPullImages = append(e.containerOptions.NoPullImages, prebuiltInstance.Image)
@@ -178,8 +193,15 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 	}
 
 	// Provide more information for RPC address heuristics
-	// when running Virtual Machines on Linux
+	// when running Virtual Machines on Linux.
+	//
+	// QEMU-backed FreeBSD tasks need a TCP listener like Vetu VMs: the guest
+	// reaches the host over the network (via an SSH-forwarded port), so a
+	// Unix domain socket would leave the agent with no way to dial back.
 	_, virtualMachine := task.Instance.(*vetu.Vetu)
+	if _, ok := task.Instance.(*freebsd.Instance); ok {
+		virtualMachine = true
+	}
 
 	e.rpc = rpc.New(e.build, rpcOpts...)
 	if err := e.rpc.Start(ctx, "localhost:0", virtualMachine); err != nil {

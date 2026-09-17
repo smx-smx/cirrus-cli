@@ -26,7 +26,7 @@ func (r *RPC) GenerateCacheUploadURL(ctx context.Context, req *api.CacheKey) (*a
 		return &api.GenerateURLResponse{Url: grpcEndpoint}, nil
 	}
 
-	cacheURL := fmt.Sprintf("%s/cirrus-gha-cache/upload/%s", r.ghaCacheHTTPBase(), url.PathEscape(req.CacheKey))
+	cacheURL := fmt.Sprintf("%s/cirrus-gha-cache/upload/%s", r.ghaCacheHTTPBaseForTask(ctx), url.PathEscape(req.CacheKey))
 	return &api.GenerateURLResponse{Url: cacheURL}, nil
 }
 
@@ -96,7 +96,7 @@ func (r *RPC) GenerateCacheDownloadURLs(ctx context.Context, req *api.CacheKey) 
 		return &api.GenerateURLsResponse{Urls: []string{grpcEndpoint}}, nil
 	}
 
-	httpEndpoint := r.ghaCacheHTTPBase()
+	httpEndpoint := r.ghaCacheHTTPBaseForTask(ctx)
 	cacheURL := fmt.Sprintf("%s/cirrus-gha-cache/download/%s", httpEndpoint, url.PathEscape(req.CacheKey))
 	return &api.GenerateURLsResponse{Urls: []string{cacheURL}}, nil
 }

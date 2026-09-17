@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 
+	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/freebsd"
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
 	"github.com/cirruslabs/cirrus-cli/pkg/github"
 	"google.golang.org/grpc/codes"
@@ -61,6 +62,26 @@ func containerReachableHost() string {
 		return "172.17.0.1"
 	}
 	return "host.docker.internal"
+}
+
+// qemuGuestHost is the well-known alias through which QEMU user-networking
+// guests reach services on the host.
+const qemuGuestHost = "10.0.2.2"
+
+// ghaCacheHTTPBaseForTask is ghaCacheHTTPBase, except that agents running
+// inside QEMU guests (FreeBSD tasks) get an address they can actually dial:
+// the container bridge gateway is not reliably visible from behind QEMU's
+// user-mode networking, while the slirp host alias always is.
+func (r *RPC) ghaCacheHTTPBaseForTask(ctx context.Context) string {
+	if task, err := r.taskFromMetadata(ctx); err == nil && task != nil {
+		if _, ok := task.Instance.(*freebsd.Instance); ok && r.ghaHTTPListener != nil {
+			if addr, ok := r.ghaHTTPListener.Addr().(*net.TCPAddr); ok {
+				return fmt.Sprintf("http://%s:%d", qemuGuestHost, addr.Port)
+			}
+		}
+	}
+
+	return r.ghaCacheHTTPBase()
 }
 
 func extractHost(endpoint string) string {
