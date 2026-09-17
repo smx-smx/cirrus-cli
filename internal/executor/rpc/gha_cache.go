@@ -7,6 +7,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 
 	"github.com/cirruslabs/cirrus-cli/pkg/api"
@@ -23,9 +24,43 @@ func (r *RPC) ghaCacheEnabled() bool {
 
 func (r *RPC) ghaCacheHTTPBase() string {
 	httpPort := r.ghaHTTPListener.Addr().(*net.TCPAddr).Port
-	grpcEndpoint := r.listener.DirectEndpoint()
-	host := strings.TrimRight(grpcEndpoint, "/")
-	return fmt.Sprintf("http://%s:%d", extractHost(host), httpPort)
+	return fmt.Sprintf("http://%s:%d", ghaCacheReachableHost(r.listener.DirectEndpoint()), httpPort)
+}
+
+// ghaCacheReachableHost returns an address the task container can dial
+// to reach the GHA cache HTTP proxy running on the host.
+//
+// The proxy listens on 0.0.0.0, but deriving the host from DirectEndpoint()
+// naively yields either a unix socket path (Linux non-VM and Windows
+// containers use unix sockets for gRPC) or a loopback address
+// (127.0.0.1), both unreachable from inside the container.
+func ghaCacheReachableHost(directEndpoint string) string {
+	if strings.HasPrefix(directEndpoint, "unix:") {
+		return containerReachableHost()
+	}
+
+	trimmed := strings.TrimPrefix(directEndpoint, "http://")
+	trimmed = strings.TrimPrefix(trimmed, "https://")
+
+	host, _, err := net.SplitHostPort(trimmed)
+	if err != nil {
+		return extractHost(directEndpoint)
+	}
+
+	if host == "" || host == "127.0.0.1" || host == "::1" || host == "::" || host == "0.0.0.0" {
+		return containerReachableHost()
+	}
+
+	return host
+}
+
+func containerReachableHost() string {
+	if runtime.GOOS == "linux" {
+		// No host.docker.internal on Linux; use the Docker bridge gateway.
+		// Matches prior cirrus-action behavior.
+		return "172.17.0.1"
+	}
+	return "host.docker.internal"
 }
 
 func extractHost(endpoint string) string {
