@@ -148,6 +148,12 @@ func (r *RPC) DirectEndpoint() string {
 
 // Stop gracefully stops the RPC server.
 func (r *RPC) Stop() {
+	// Shut down the GHA cache HTTP proxy first, otherwise
+	// serverWaitGroup.Wait() below blocks forever when GHA mode is
+	// enabled (Start adds both gRPC and HTTP servers to the group).
+	if r.ghaHTTPServer != nil {
+		_ = r.ghaHTTPServer.Close()
+	}
 	r.server.GracefulStop()
 	r.serverWaitGroup.Wait()
 }
