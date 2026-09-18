@@ -10,6 +10,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/containerbackend"
@@ -188,6 +189,18 @@ Outer:
 		allTags := append([]string{prebuilt.Image}, prebuilt.ExtraTags...)
 		for _, tag := range allTags {
 			if err := backend.ImagePush(ctx, tag, auth); err != nil {
+				if isPushAuthError(err) {
+					// The registry refused the push for authorization reasons.
+					// The classic case is a fork pull request, whose token is
+					// read-only: the image cannot be published, but the build
+					// itself succeeded and the image stays usable locally, so
+					// degrade instead of failing the task. Remaining tags
+					// would be denied identically, so stop here.
+					logger.Warnf("not pushing %s: registry denied the push (%v). "+
+						"Expected on fork pull requests (read-only token); continuing "+
+						"without a published image.", tag, err)
+					break
+				}
 				if tag == prebuilt.Image {
 					return err
 				}
@@ -207,6 +220,27 @@ func constructAuth(username, password string) string {
 	authConfigJSON, _ := json.Marshal(authConfig)
 	// Docker expects standard base64 (not URL-safe) for X-Registry-Auth.
 	return base64.StdEncoding.EncodeToString(authConfigJSON)
+}
+
+// isPushAuthError reports whether an image push failure is an authorization
+// refusal (as opposed to a network/registry malfunction). Registries phrase
+// these as denied/unauthorized/authentication-required/forbidden, e.g. the
+// "requested access to the resource is denied" that ghcr.io returns for the
+// read-only token of a fork pull request.
+func isPushAuthError(err error) bool {
+	if err == nil {
+		return false
+	}
+
+	lowered := strings.ToLower(err.Error())
+
+	for _, marker := range []string{"denied", "unauthorized", "authentication required", "forbidden"} {
+		if strings.Contains(lowered, marker) {
+			return true
+		}
+	}
+
+	return false
 }
 
 func addOCILabels(labels map[string]string, image string, opts options.ContainerOptions) {

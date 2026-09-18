@@ -1,6 +1,7 @@
 package instance
 
 import (
+	"errors"
 	"strings"
 	"testing"
 
@@ -137,4 +138,17 @@ func TestAddOCILabelsOnlyOwnerNoRepo(t *testing.T) {
 
 	assert.Empty(t, labels["org.opencontainers.image.source"])
 	assert.Equal(t, "sha1", labels["org.opencontainers.image.revision"])
+}
+
+func TestIsPushAuthError(t *testing.T) {
+	// ghcr.io refusal for a read-only (fork PR) token.
+	assert.True(t, isPushAuthError(errors.New(
+		"push failed: denied: requested access to the resource is denied")))
+	assert.True(t, isPushAuthError(errors.New("unauthorized: authentication required")))
+	assert.True(t, isPushAuthError(errors.New("403 Forbidden from registry")))
+
+	// Malfunctions must still fail the task.
+	assert.False(t, isPushAuthError(errors.New("dial tcp: connection refused")))
+	assert.False(t, isPushAuthError(errors.New("blob upload failed with status 500")))
+	assert.False(t, isPushAuthError(nil))
 }
