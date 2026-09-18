@@ -193,14 +193,23 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 		rpcOpts = append(rpcOpts, rpc.WithArtifactsDir(taskSpecificArtifactsDir))
 	}
 
-	// Architecture-aware routing (see arch.go): on a single runner, skip tasks
-	// built for another CPU instead of failing them, mirroring how the cloud
-	// scheduler only places tasks on matching hosts.
+	// Placement (see arch.go and os.go): on a single runner, skip tasks
+	// built for another CPU or OS instead of failing them, mirroring how
+	// the cloud scheduler only places tasks on matching hosts.
 	if arch, ok := taskArch(task, e.build.Tasks()); ok && !hostSupportsArch(arch) {
 		taskLogger := e.logger.Scoped(task.UniqueDescription())
 		taskLogger.Warnf("skipping: task requires %s but the host runs %s/%s "+
 			"(no matching runner or binfmt emulation)",
 			arch.String(), runtime.GOOS, runtime.GOARCH)
+		taskLogger.FinishWithType(echelon.FinishTypeSkipped)
+		task.SetStatus(taskstatus.Skipped)
+		return nil
+	}
+	if os, ok := taskOS(task, e.build.Tasks()); ok && !hostSupportsOS(os) {
+		taskLogger := e.logger.Scoped(task.UniqueDescription())
+		taskLogger.Warnf("skipping: task requires %s but the host runs %s/%s "+
+			"(no matching runner)",
+			os, runtime.GOOS, runtime.GOARCH)
 		taskLogger.FinishWithType(echelon.FinishTypeSkipped)
 		task.SetStatus(taskstatus.Skipped)
 		return nil
