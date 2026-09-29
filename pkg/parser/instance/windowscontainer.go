@@ -61,7 +61,7 @@ func NewWindowsCommunityContainer(mergedEnv map[string]string, parserKit *parser
 		return nil
 	})
 
-	osVersionSchema := schema.Enum([]interface{}{"2019", "1709", "1803"}, "Windows version of container.")
+	osVersionSchema := schema.Enum([]interface{}{"2019", "1709", "1803", "2022", "2025"}, "Windows version of container.")
 	container.OptionalField(nameable.NewSimpleNameable("os_version"), osVersionSchema, func(node *node.Node) error {
 		osVersion, err := node.GetExpandedStringValue(mergedEnv)
 		if err != nil {

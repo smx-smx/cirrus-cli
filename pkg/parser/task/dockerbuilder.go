@@ -106,7 +106,7 @@ func NewDockerBuilder(
 		return nil
 	})
 
-	osVersionSchema := schema.Enum([]interface{}{"2019", "1709", "1803"}, "Windows version of container.")
+	osVersionSchema := schema.Enum([]interface{}{"2019", "1709", "1803", "2022", "2025"}, "Windows version of container.")
 	dbuilder.OptionalField(nameable.NewSimpleNameable("os_version"), osVersionSchema, func(node *node.Node) error {
 		osVersion, err := node.GetExpandedStringValue(environment.Merge(dbuilder.proto.Environment, env))
 		if err != nil {
