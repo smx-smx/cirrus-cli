@@ -59,7 +59,11 @@ func CreateTempArchive(dir string) (string, error) {
 		if err != nil {
 			return err
 		}
-		header.Name = relPath
+		// Docker matches the --file path against tar entry names using
+		// forward slashes, so normalize unconditionally: on Windows
+		// filepath.Rel returns backslash-separated paths that the daemon
+		// would never match ("Cannot locate specified Dockerfile").
+		header.Name = filepath.ToSlash(relPath)
 
 		// Write file header
 		if err := archive.WriteHeader(header); err != nil {

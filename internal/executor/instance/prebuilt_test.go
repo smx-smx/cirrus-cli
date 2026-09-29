@@ -49,7 +49,7 @@ func TestCreateArchive(t *testing.T) {
 	header, err := archive.Next()
 	require.NoError(t, err)
 
-	adaptedPath := filepath.FromSlash("directory/file-in-a-directory")
+	adaptedPath := "directory/file-in-a-directory"
 	assert.Equal(t, adaptedPath, header.Name)
 
 	header, err = archive.Next()
