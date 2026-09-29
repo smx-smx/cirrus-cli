@@ -12,15 +12,28 @@ func unrollStream(reader io.Reader, logChan chan<- string, errChan chan<- error)
 	buildProgressReader := bufio.NewReader(reader)
 
 	for {
-		// Docker build progress is line-based
-		line, _, err := buildProgressReader.ReadLine()
-		if err != nil {
-			if err == io.EOF {
+		// Docker build progress is line-based, but a single JSON object
+		// can exceed the reader's buffer (e.g. pacman's whole package
+		// list on one line), so accumulate fragments until a full line
+		// is available instead of parsing a truncated prefix.
+		var line []byte
+		for {
+			fragment, isPrefix, err := buildProgressReader.ReadLine()
+			if err != nil {
+				if err != io.EOF {
+					errChan <- err
+					return
+				}
+				// EOF: parse any trailing bytes, then finish.
 				break
 			}
-
-			errChan <- err
-			return
+			line = append(line, fragment...)
+			if !isPrefix {
+				break
+			}
+		}
+		if len(line) == 0 {
+			break
 		}
 
 		// Each line is a JSON object with the actual message wrapped in it
