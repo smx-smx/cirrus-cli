@@ -1,0 +1,8 @@
+container:
+  image: debian:latest
+  privileged: true
+
+task:
+  name: task1
+  script:
+    - ./test1.sh

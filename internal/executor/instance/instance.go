@@ -71,6 +71,7 @@ func NewFromProto(
 			Image:                instance.Image,
 			CPU:                  instance.Cpu,
 			Memory:               instance.Memory,
+			Privileged:           instance.Privileged,
 			AdditionalContainers: instance.AdditionalContainers,
 			Platform:             containerPlatform,
 			Architecture:         architecture,

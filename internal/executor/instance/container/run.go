@@ -92,6 +92,7 @@ func RunContainerizedAgent(ctx context.Context, config *runconfig.RunConfig, par
 			NanoCPUs: int64(params.CPU * nano),
 			Memory:   int64(params.Memory * mebi),
 		},
+		Privileged: params.Privileged,
 	}
 
 	if runtime.GOOS == "linux" {

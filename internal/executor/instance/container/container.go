@@ -14,6 +14,7 @@ type Instance struct {
 	Image                string
 	CPU                  float32
 	Memory               uint32
+	Privileged           bool
 	AdditionalContainers []*api.AdditionalContainer
 	Architecture         *api.Architecture
 	Platform             platform.Platform
@@ -27,6 +28,7 @@ type Params struct {
 	Image                  string
 	CPU                    float32
 	Memory                 uint32
+	Privileged             bool
 	AdditionalContainers   []*api.AdditionalContainer
 	CommandFrom, CommandTo string
 	Platform               platform.Platform
@@ -84,6 +86,7 @@ func (inst *Instance) Run(ctx context.Context, config *runconfig.RunConfig) (err
 		Image:                inst.Image,
 		CPU:                  inst.CPU,
 		Memory:               inst.Memory,
+		Privileged:           inst.Privileged,
 		AdditionalContainers: inst.AdditionalContainers,
 		Platform:             inst.Platform,
 		Architecture:         inst.Architecture,

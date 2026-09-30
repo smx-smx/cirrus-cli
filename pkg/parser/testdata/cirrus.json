@@ -962,7 +962,9 @@
           "enum": [
             "2019",
             "1709",
-            "1803"
+            "1803",
+            "2022",
+            "2025"
           ]
         },
         "platform": {
@@ -2479,6 +2481,10 @@
               "pattern": "\\d+(G|Mb)?",
               "type": "string"
             },
+            "privileged": {
+              "description": "Boolean expression that can use environment variables.",
+              "type": "string"
+            },
             "registry_config": {
               "type": "string"
             },
@@ -3385,7 +3391,9 @@
               "enum": [
                 "2019",
                 "1709",
-                "1803"
+                "1803",
+                "2022",
+                "2025"
               ]
             },
             "use_static_ip": {
@@ -3531,6 +3539,10 @@
         },
         "memory": {
           "pattern": "\\d+(G|Mb)?",
+          "type": "string"
+        },
+        "privileged": {
+          "description": "Boolean expression that can use environment variables.",
           "type": "string"
         },
         "registry_config": {
@@ -3859,7 +3871,9 @@
           "enum": [
             "2019",
             "1709",
-            "1803"
+            "1803",
+            "2022",
+            "2025"
           ]
         },
         "use_static_ip": {

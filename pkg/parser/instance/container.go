@@ -95,6 +95,15 @@ func NewCommunityContainer(
 		return nil
 	})
 
+	container.OptionalField(nameable.NewSimpleNameable("privileged"), schema.Condition(""), func(node *node.Node) error {
+		privileged, err := node.GetBoolValue(mergedEnv, parserKit.Boolevator)
+		if err != nil {
+			return err
+		}
+		container.proto.Privileged = privileged
+		return nil
+	})
+
 	additionalContainersNameable := nameable.NewSimpleNameable("additional_containers")
 	acSchema := schema.ArrayOf(NewAdditionalContainer(nil, nil).Schema())
 	container.OptionalField(additionalContainersNameable, acSchema, func(node *node.Node) error {
