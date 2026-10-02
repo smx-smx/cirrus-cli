@@ -389,6 +389,14 @@ func tailFile(path string, maxLines int, maxBytes int) string {
 	return strings.Join(lines, "\n")
 }
 
+// QemuAvailable reports whether the QEMU binary needed to boot FreeBSD
+// guests can be found. On Windows, exec.LookPath also matches .exe,
+// so a QEMU installed via winget/choco counts.
+func QemuAvailable() bool {
+	_, err := exec.LookPath("qemu-system-x86_64")
+	return err == nil
+}
+
 func qemuVersion() string {
 	out, err := exec.Command("qemu-system-x86_64", "--version").Output()
 	if err != nil {

@@ -1,6 +1,8 @@
 package freebsd
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -86,4 +88,20 @@ func TestConfigFromEnvironmentDefaults(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, defaultCPU, config.CPU)
 	assert.Equal(t, uint32(defaultMemory), config.Memory)
+}
+
+func TestQemuAvailable(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	assert.False(t, QemuAvailable())
+
+	dir := t.TempDir()
+	// Both spellings so the test holds on Linux and Windows
+	// (exec.LookPath matches .exe there).
+	for _, name := range []string{"qemu-system-x86_64", "qemu-system-x86_64.exe"} {
+		f, err := os.OpenFile(filepath.Join(dir, name), os.O_CREATE|os.O_WRONLY, 0755)
+		require.NoError(t, err)
+		require.NoError(t, f.Close())
+	}
+	t.Setenv("PATH", dir)
+	assert.True(t, QemuAvailable())
 }

@@ -228,6 +228,17 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 		return nil
 	}
 
+	// FreeBSD guests boot under QEMU, which Windows runners lack; skip
+	// instead of failing at instance startup. Elsewhere a missing QEMU
+	// is a runner misconfiguration, so let it fail.
+	if _, ok := task.Instance.(*freebsd.Instance); ok && runtime.GOOS == "windows" && !freebsd.QemuAvailable() {
+		taskLogger := e.logger.Scoped(task.UniqueDescription())
+		taskLogger.Warnf("skipping: qemu-system-x86_64 not found in PATH, cannot boot FreeBSD guest")
+		taskLogger.FinishWithType(echelon.FinishTypeSkipped)
+		task.SetStatus(taskstatus.Skipped)
+		return nil
+	}
+
 	// Provide more information for RPC address heuristics
 	// when running Virtual Machines on Linux.
 	//
