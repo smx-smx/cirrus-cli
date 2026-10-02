@@ -148,9 +148,11 @@ jobs:
         # with:
         #   tasks: ''              # default: run all tasks (OS/arch auto-skipped)
         #   args: ''               # extra `cirrus run` args
+        #   cirrus-ref: HEAD       # HEAD (default), branch, tag, or commit SHA
         #   working-directory: '.' # where .cirrus.yml lives
         #   qemu: auto             # auto|true|false (Linux/FreeBSD)
         #   tart: auto             # auto|true|false (macOS)
+        #   cache: true            # cache built binary (keyed on resolved SHA)
 
   cirrus-windows:
     name: cirrus (windows-2025)

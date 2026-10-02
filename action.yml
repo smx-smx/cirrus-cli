@@ -41,6 +41,14 @@ inputs:
     description: 'Go toolchain version used to build the cirrus binary from source.'
     required: false
     default: '1.25'
+  cirrus-ref:
+    description: 'Which cirrus-cli revision to run. HEAD (default) builds the action revision pinned in uses: with no network access; a branch (e.g. main) tracks its tip; a tag (e.g. v0.99.2) or full commit SHA builds that exact revision. The resolved SHA keys the binary cache, so a cache hit reuses the build without rebuilding.'
+    required: false
+    default: 'HEAD'
+  cache:
+    description: 'Cache the built cirrus binary with actions/cache (keyed on runner OS/arch plus the action source revision) so repeat runs skip the rebuild. Set to false to always build from source.'
+    required: false
+    default: 'true'
   github-token:
     description: 'Token used to authenticate to ghcr.io for Dockerfile image push. Defaults to github.token when empty.'
     required: false
@@ -50,6 +58,11 @@ inputs:
     required: false
     default: 'false'
 
+outputs:
+  cirrus-sha:
+    description: 'Resolved cirrus-cli commit SHA that was built (or restored from cache).'
+    value: ${{ steps.cirrus-version.outputs.sha }}
+
 runs:
   using: 'composite'
   steps:
@@ -58,21 +71,136 @@ runs:
       with:
         go-version: ${{ inputs.go-version }}
 
-    - name: Build cirrus from source
+    - name: Resolve cirrus version
+      id: cirrus-version
       shell: bash
+      env:
+        # github.action_ref/action_repository must reach the script via env
+        # (they are not supported directly in `run`). Token value is
+        # auto-masked in logs.
+        ACTION_REF: ${{ github.action_ref }}
+        ACTION_REPO: ${{ github.action_repository }}
+        GITHUB_TOKEN: ${{ github.token }}
       run: |
         set -euo pipefail
         OUT_DIR="${RUNNER_TEMP}/cirrus-bin"
-        mkdir -p "${OUT_DIR}"
+        SRC_DIR="${RUNNER_TEMP}/cirrus-src"
         EXE=""
         if [ "${RUNNER_OS}" = "Windows" ]; then
           EXE=".exe"
         fi
-        echo "Building cirrus from ${GITHUB_ACTION_PATH} ..."
-        (cd "${GITHUB_ACTION_PATH}" && go build -o "${OUT_DIR}/cirrus${EXE}" ./cmd/cirrus/main.go)
+        if [ -z "${ACTION_REF}" ]; then
+          echo "error: github.action_ref is empty (action checkout context unavailable)" >&2
+          exit 1
+        fi
+        REQUESTED="${{ inputs.cirrus-ref }}"
+        if [ "${REQUESTED}" = "HEAD" ] || [ "${REQUESTED}" = "${ACTION_REF}" ]; then
+          # Build the action revision pinned in `uses:` straight from its
+          # checkout: no network, no git metadata needed (the runner stores
+          # actions as a source tarball, so .git may not exist).
+          # The exact-key cache below reuses the build whenever the cached
+          # revision still matches.
+          IN_PLACE="true"
+          REF="${ACTION_REF}"
+        else
+          IN_PLACE="false"
+          REF="${REQUESTED}"
+        fi
+        SHA=""
+        if [[ "${REF}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+          # Full commit SHA: already resolved, clone happens on cache miss.
+          SHA="${REF}"
+        else
+          # Branch or tag: resolve to a SHA with ls-remote (no object
+          # download), so a cache hit skips the clone+build entirely.
+          # NOTE: hashFiles() resolves against the caller's workspace, not
+          # the action repo, so it cannot fingerprint the CLI sources;
+          # the resolved commit SHA identifies them exactly instead
+          # (a new commit => a new key => one cold build, then hits).
+          # Token auth works for public and private repos alike.
+          CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${ACTION_REPO}.git"
+          RESOLVED="$(git ls-remote "${CLONE_URL}" "${REF}" || true)"
+          # Peeled `^{}` line first: annotated tags then resolve to their
+          # commit rather than the tag object.
+          SHA="$(printf '%s\n' "${RESOLVED}" | grep '\^{}' | head -n 1 | cut -f 1 || true)"
+          if [ -z "${SHA}" ]; then
+            SHA="$(printf '%s\n' "${RESOLVED}" | head -n 1 | cut -f 1 || true)"
+          fi
+        fi
+        if [ -z "${SHA}" ]; then
+          echo "error: unable to resolve cirrus-ref '${REQUESTED}' (use HEAD, a branch, a tag, or a full commit SHA)" >&2
+          exit 1
+        fi
+        {
+          echo "requested=${REQUESTED}"
+          echo "ref=${REF}"
+          echo "sha=${SHA}"
+          echo "in-place=${IN_PLACE}"
+          echo "action-repo=${ACTION_REPO}"
+          echo "src-dir=${SRC_DIR}"
+          echo "out-dir=${OUT_DIR}"
+          echo "exe=${EXE}"
+          echo "cache-key=cirrus-cli-${RUNNER_OS}-${RUNNER_ARCH}-${SHA}"
+        } >> "${GITHUB_OUTPUT}"
+        mkdir -p "${OUT_DIR}"
+        echo "cirrus-ref '${REQUESTED}' resolves to ${SHA}"
+
+    - name: Restore cached cirrus binary
+      id: cirrus-cache
+      if: ${{ inputs.cache == 'true' }}
+      uses: actions/cache@v4
+      with:
+        path: ${{ steps.cirrus-version.outputs.out-dir }}
+        # Exact key only (no restore-keys): a prefix match could restore a
+        # binary built from different sources. A miss builds and re-saves.
+        key: ${{ steps.cirrus-version.outputs.cache-key }}
+
+    - name: Build cirrus from source
+      if: ${{ steps.cirrus-cache.outputs.cache-hit != 'true' }}
+      shell: bash
+      env:
+        ACTION_REPO: ${{ github.action_repository }}
+        GITHUB_TOKEN: ${{ github.token }}
+      run: |
+        set -euo pipefail
+        OUT_DIR="${{ steps.cirrus-version.outputs.out-dir }}"
+        SRC_DIR="${{ steps.cirrus-version.outputs.src-dir }}"
+        EXE="${{ steps.cirrus-version.outputs.exe }}"
+        SHA="${{ steps.cirrus-version.outputs.sha }}"
+        REF="${{ steps.cirrus-version.outputs.ref }}"
+        if [ "${{ steps.cirrus-version.outputs.in-place }}" != "true" ]; then
+          # A non-pinned revision is not in the action checkout (which the
+          # runner stores as a plain source tarball), so clone it fresh into
+          # a scratch dir. Token auth covers private repos; the value is
+          # auto-masked in logs and -q keeps URLs out of the output.
+          CLONE_URL="https://x-access-token:${GITHUB_TOKEN}@github.com/${ACTION_REPO}.git"
+          rm -rf "${SRC_DIR}"
+          if [[ "${REF}" =~ ^[0-9a-fA-F]{40}$ ]]; then
+            git init -q "${SRC_DIR}"
+            git -C "${SRC_DIR}" remote add origin "${CLONE_URL}"
+            git -C "${SRC_DIR}" fetch -q --depth 1 origin "${SHA}"
+            git -C "${SRC_DIR}" checkout -q --detach "${SHA}"
+          else
+            git clone -q --depth 1 --branch "${REF}" "${CLONE_URL}" "${SRC_DIR}"
+          fi
+          echo "materialized cirrus-cli ${SHA} in ${SRC_DIR}"
+        else
+          SRC_DIR="${GITHUB_ACTION_PATH}"
+        fi
+        echo "Building cirrus ${SHA} from ${SRC_DIR} ..."
+        (cd "${SRC_DIR}" && go build -o "${OUT_DIR}/cirrus${EXE}" ./cmd/cirrus/main.go)
+        echo "cirrus built: ${OUT_DIR}/cirrus${EXE} (${SHA})"
+
+    - name: Add cirrus to PATH
+      shell: bash
+      run: |
+        set -euo pipefail
+        OUT_DIR="${{ steps.cirrus-version.outputs.out-dir }}"
+        EXE="${{ steps.cirrus-version.outputs.exe }}"
         echo "${OUT_DIR}" >> "${GITHUB_PATH}"
+        # Smoke-test the binary, whether freshly built or cache-restored.
         "${OUT_DIR}/cirrus${EXE}" --help >/dev/null
-        echo "cirrus built: ${OUT_DIR}/cirrus${EXE}"
+        echo "cirrus ready: ${OUT_DIR}/cirrus${EXE}"
 
     - name: Install QEMU (Linux, for freebsd_instance)
       if: ${{ runner.os == 'Linux' }}
