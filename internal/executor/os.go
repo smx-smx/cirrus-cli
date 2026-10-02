@@ -84,6 +84,15 @@ func containerOS(task *build.Task) (string, bool) {
 	return "", false
 }
 
+// needsLinuxContainers reports whether the task runs a Linux container.
+// Unlike taskOS (which only constrains positively-Windows/macOS tasks),
+// this also matches unconstrained Linux containers, for hosts whose
+// Docker daemon cannot run them (e.g. Windows-mode daemon).
+func needsLinuxContainers(task *build.Task) bool {
+	os, ok := containerOS(task)
+	return ok && os == "linux"
+}
+
 // hostSupportsOS reports whether the current host satisfies a required OS.
 func hostSupportsOS(os string) bool {
 	return runtime.GOOS == os

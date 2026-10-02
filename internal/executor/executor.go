@@ -17,6 +17,7 @@ import (
 	"github.com/cirruslabs/cirrus-cli/internal/executor/build/taskstatus"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/endpoint"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/environment"
+	"github.com/cirruslabs/cirrus-cli/internal/executor/heuristic"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/container"
 	"github.com/cirruslabs/cirrus-cli/internal/executor/instance/freebsd"
@@ -210,6 +211,18 @@ func (e *Executor) runSingleTask(ctx context.Context, task *build.Task) (err err
 		taskLogger.Warnf("skipping: task requires %s but the host runs %s/%s "+
 			"(no matching runner)",
 			os, runtime.GOOS, runtime.GOARCH)
+		taskLogger.FinishWithType(echelon.FinishTypeSkipped)
+		task.SetStatus(taskstatus.Skipped)
+		return nil
+	}
+	// Linux containers are deliberately allowed on any host with Docker
+	// (see os.go), but a Windows-mode daemon cannot run them: its mount
+	// paths (e.g. C:\agent-volume) and images differ, so even volume setup
+	// fails. Skip instead of failing. Probed only on Windows hosts, so
+	// Linux/macOS behavior is unchanged.
+	if needsLinuxContainers(task) && runtime.GOOS == "windows" && heuristic.IsRunningWindowsContainers(ctx) {
+		taskLogger := e.logger.Scoped(task.UniqueDescription())
+		taskLogger.Warnf("skipping: task requires Linux containers but the Docker daemon runs Windows containers")
 		taskLogger.FinishWithType(echelon.FinishTypeSkipped)
 		task.SetStatus(taskstatus.Skipped)
 		return nil

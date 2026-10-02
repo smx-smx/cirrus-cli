@@ -83,3 +83,13 @@ func TestHostSupportsOS(t *testing.T) {
 	assert.True(t, hostSupportsOS(runtime.GOOS))
 	assert.False(t, hostSupportsOS("plan9"))
 }
+
+func TestNeedsLinuxContainers(t *testing.T) {
+	assert.True(t, needsLinuxContainers(&build.Task{
+		Instance: &container.Instance{Platform: platform.NewUnix()},
+	}))
+	assert.False(t, needsLinuxContainers(&build.Task{
+		Instance: &container.Instance{Platform: platform.NewWindows("2025")},
+	}))
+	assert.False(t, needsLinuxContainers(&build.Task{}))
+}
