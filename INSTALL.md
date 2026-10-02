@@ -115,17 +115,64 @@ environment variable (see [article in the Go wiki](https://github.com/golang/go/
 
 ## GitHub Actions
 
-Here is an example `.github/workflows/cirrus.yml` configuration file that runs Cirrus Tasks using CLI:
+This fork ships a Marketplace-ready composite action (`action.yml` at the repo
+root). It builds `cirrus` from source and runs your `.cirrus.yml` with zero
+config: QEMU/KVM for `freebsd_instance`, Tart for `macos_instance`, GHCR
+push for Dockerfile images, plus GHA-native cache and artifact upload are all
+automatic. Tasks that don't match the runner OS/arch are skipped, so one
+workflow covers Linux x64 + ARM, Windows containers, FreeBSD and macOS.
+
+Minimal `.github/workflows/cirrus.yml` (no config, re-uses `.cirrus.yml`):
 
 ```yaml
-name: Run Cirrus Tasks
+name: Cirrus CLI
+on: [push, pull_request, workflow_dispatch]
 
-on:
-  push:
-    branches: [ master ]
-  pull_request:
-    branches: [ master ]
+jobs:
+  cirrus:
+    name: cirrus (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    permissions:
+      contents: read
+      packages: write   # Dockerfile images are pushed to ghcr.io
+      actions: write    # GHA cache service translation
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-24.04
+          - os: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: smx-smx/cirrus-cli@main
+        # with:
+        #   tasks: ''              # default: run all tasks (OS/arch auto-skipped)
+        #   args: ''               # extra `cirrus run` args
+        #   working-directory: '.' # where .cirrus.yml lives
+        #   qemu: auto             # auto|true|false (Linux/FreeBSD)
+        #   tart: auto             # auto|true|false (macOS)
 
+  cirrus-windows:
+    name: cirrus (windows-2025)
+    runs-on: windows-2025
+    permissions:
+      contents: read
+      packages: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: smx-smx/cirrus-cli@main
+```
+
+To publish a version to the [GitHub Marketplace](https://github.com/marketplace),
+create a GitHub Release (e.g. `v1`) in this repo; the `action.yml` at the
+repo root is picked up automatically. Consumers can then pin
+`smx-smx/cirrus-cli@v1`.
+
+Legacy upstream example (uses the old `cirrus-action` JS wrapper, kept for
+reference):
+
+```yaml
 jobs:
   cirrus:
     runs-on: ubuntu-latest

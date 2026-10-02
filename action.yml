@@ -1,0 +1,212 @@
+name: 'Cirrus CLI'
+description: 'Run Cirrus tasks from .cirrus.yml on GitHub Actions with zero config. Builds smx-smx/cirrus-cli from source, sets up QEMU/KVM (FreeBSD), Tart (macOS), GHCR push, GHA cache and artifact upload automatically.'
+branding:
+  icon: 'box'
+  color: 'gray-dark'
+
+inputs:
+  tasks:
+    description: 'Space-separated list of Cirrus task names (or name prefixes matching `cirrus run` filtering) to run. Empty runs every task in .cirrus.yml; OS/arch routing skips non-matching tasks automatically.'
+    required: false
+    default: ''
+  args:
+    description: 'Extra arguments appended verbatim to `cirrus run` (e.g. "--verbose --dirty").'
+    required: false
+    default: ''
+  working-directory:
+    description: 'Directory containing .cirrus.yml / .cirrus.star. Passed as working-directory to validate/run steps.'
+    required: false
+    default: '.'
+  validate:
+    description: 'Run `cirrus validate` before running tasks.'
+    required: false
+    default: 'true'
+  dockerfile-image-push:
+    description: 'Pass --dockerfile-image-push so Dockerfile-as-CI-environment images are built once and pushed to ghcr.io (requires packages: write).'
+    required: false
+    default: 'true'
+  container-lazy-pull:
+    description: 'Pass --container-lazy-pull to avoid re-pulling images that already exist locally.'
+    required: false
+    default: 'true'
+  qemu:
+    description: 'Install qemu-system-x86 on Linux for freebsd_instance tasks. One of auto, true, false. auto installs only when the config contains freebsd_instance.'
+    required: false
+    default: 'auto'
+  tart:
+    description: 'Install Tart on macOS for macos_instance tasks. One of auto, true, false. auto installs only when the config contains macos_instance or tart isolation.'
+    required: false
+    default: 'auto'
+  go-version:
+    description: 'Go toolchain version used to build the cirrus binary from source.'
+    required: false
+    default: '1.25'
+  github-token:
+    description: 'Token used to authenticate to ghcr.io for Dockerfile image push. Defaults to github.token when empty.'
+    required: false
+    default: ''
+  verbose:
+    description: 'Pass --verbose to `cirrus run` / `cirrus validate`.'
+    required: false
+    default: 'false'
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Setup Go
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Build cirrus from source
+      shell: bash
+      run: |
+        set -euo pipefail
+        OUT_DIR="${RUNNER_TEMP}/cirrus-bin"
+        mkdir -p "${OUT_DIR}"
+        EXE=""
+        if [ "${RUNNER_OS}" = "Windows" ]; then
+          EXE=".exe"
+        fi
+        echo "Building cirrus from ${GITHUB_ACTION_PATH} ..."
+        (cd "${GITHUB_ACTION_PATH}" && go build -o "${OUT_DIR}/cirrus${EXE}" ./cmd/cirrus/main.go)
+        echo "${OUT_DIR}" >> "${GITHUB_PATH}"
+        "${OUT_DIR}/cirrus${EXE}" --help >/dev/null
+        echo "cirrus built: ${OUT_DIR}/cirrus${EXE}"
+
+    - name: Install QEMU (Linux, for freebsd_instance)
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        set -eo pipefail
+        WANT="${{ inputs.qemu }}"
+        if [ "${WANT}" = "false" ]; then
+          echo "qemu input=false, skipping QEMU install"
+          exit 0
+        fi
+        if [ "${WANT}" = "auto" ]; then
+          CFG_DIR="${{ inputs.working-directory }}"
+          # Look only at the Cirrus configs, not the whole working dir.
+          if ! grep -q 'freebsd_instance' "${CFG_DIR}/.cirrus.yml" "${CFG_DIR}/.cirrus.star" 2>/dev/null; then
+            echo "no freebsd_instance found in ${CFG_DIR}/.cirrus.yml, skipping QEMU install"
+            exit 0
+          fi
+          if [ "$(uname -m)" != "x86_64" ]; then
+            echo "non-x64 runner ($(uname -m)): FreeBSD images are amd64-only and skip via arch routing, skipping QEMU install"
+            exit 0
+          fi
+        fi
+        echo "Installing qemu-system-x86 ..."
+        sudo apt-get update && sudo apt-get install -y qemu-system-x86
+
+    - name: Enable KVM for the runner user (Linux)
+      if: ${{ runner.os == 'Linux' }}
+      shell: bash
+      run: |
+        set -eo pipefail
+        if [ -e /dev/kvm ]; then
+          echo 'KERNEL=="kvm", GROUP="kvm", MODE="0666", OPTIONS+="static_node=kvm"' | sudo tee /etc/udev/rules.d/99-kvm4all.rules
+          sudo udevadm control --reload-rules || true
+          sudo udevadm trigger --name-match=kvm || true
+          ls -l /dev/kvm || true
+        else
+          echo "no /dev/kvm on this runner (FreeBSD tasks fall back to TCG automatically), skipping"
+        fi
+
+    - name: Install Tart (macOS, for macos_instance)
+      if: ${{ runner.os == 'macOS' }}
+      shell: bash
+      run: |
+        set -eo pipefail
+        WANT="${{ inputs.tart }}"
+        if [ "${WANT}" = "false" ]; then
+          echo "tart input=false, skipping Tart install"
+          exit 0
+        fi
+        if [ "${WANT}" = "auto" ]; then
+          CFG_DIR="${{ inputs.working-directory }}"
+          if ! grep -Eq 'macos_instance|tart:' "${CFG_DIR}/.cirrus.yml" "${CFG_DIR}/.cirrus.star" 2>/dev/null; then
+            echo "no macos_instance/tart found in ${CFG_DIR}/.cirrus.yml, skipping Tart install"
+            exit 0
+          fi
+        fi
+        if command -v tart >/dev/null 2>&1; then
+          echo "tart already installed: $(tart --version || true)"
+          exit 0
+        fi
+        echo "Installing Tart ..."
+        brew install cirruslabs/cli/tart
+
+    - name: Expose GHA runtime vars to cirrus
+      uses: actions/github-script@v7
+      with:
+        script: |
+          // ACTIONS_RUNTIME_TOKEN / ACTIONS_RESULTS_URL are visible to JS
+          // actions but not to shell steps by default. Re-export them via
+          // $GITHUB_ENV so `cirrus run` (cache + artifact translation)
+          // can reach the GHA CacheService / Results service.
+          const token = process.env['ACTIONS_RUNTIME_TOKEN'];
+          const url = process.env['ACTIONS_RESULTS_URL'];
+          if (token) {
+            core.exportVariable('ACTIONS_RUNTIME_TOKEN', token);
+            core.setSecret(token);
+          } else {
+            core.warning('ACTIONS_RUNTIME_TOKEN not present; GHA cache/artifacts will degrade gracefully');
+          }
+          if (url) {
+            core.exportVariable('ACTIONS_RESULTS_URL', url);
+          } else {
+            core.warning('ACTIONS_RESULTS_URL not present; GHA cache/artifacts will degrade gracefully');
+          }
+
+    - name: Validate cirrus config
+      if: ${{ inputs.validate == 'true' }}
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      run: |
+        set -eo pipefail
+        FLAGS=""
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          FLAGS="--verbose"
+        fi
+        # NOTE: inputs.args is intentionally NOT forwarded to `validate`
+        # (it may contain run-only flags like --dockerfile-image-push).
+        # shellcheck disable=SC2086
+        cirrus validate ${FLAGS}
+
+    - name: Run cirrus tasks
+      shell: bash
+      working-directory: ${{ inputs.working-directory }}
+      env:
+        GITHUB_TOKEN: ${{ inputs.github-token || github.token }}
+      run: |
+        set -eo pipefail
+        # String flags (not arrays) so empty values expand to nothing on
+        # bash 3.2 (macOS system bash), bash 4.x and Git Bash on Windows.
+        FLAGS=""
+        if [ "${{ inputs.dockerfile-image-push }}" = "true" ]; then
+          FLAGS="${FLAGS} --dockerfile-image-push"
+        fi
+        if [ "${{ inputs.container-lazy-pull }}" = "true" ]; then
+          FLAGS="${FLAGS} --container-lazy-pull"
+        fi
+        if [ "${{ inputs.verbose }}" = "true" ]; then
+          FLAGS="${FLAGS} --verbose"
+        fi
+        # NOTE: GITHUB_TOKEN env above (or GH token input) authenticates the
+        # ghcr.io push. Cache/artifacts use ACTIONS_RUNTIME_TOKEN exported
+        # by the github-script step; no extra wiring needed.
+        TASKS="${{ inputs.tasks }}"
+        EXTRA_ARGS="${{ inputs.args }}"
+        if [ -z "${TASKS}" ]; then
+          echo "+ cirrus run${FLAGS} ${EXTRA_ARGS}"
+          # shellcheck disable=SC2086
+          cirrus run ${FLAGS} ${EXTRA_ARGS}
+        else
+          for task in ${TASKS}; do
+            echo "===== cirrus run ${task} ====="
+            echo "+ cirrus run${FLAGS} ${EXTRA_ARGS} ${task}"
+            # shellcheck disable=SC2086
+            cirrus run ${FLAGS} ${EXTRA_ARGS} "${task}"
+          done
+        fi
