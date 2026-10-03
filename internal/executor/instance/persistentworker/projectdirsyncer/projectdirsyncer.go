@@ -46,6 +46,12 @@ func SyncProjectDir(dir string, sshClient *ssh.Client) error {
 			if _, err := io.Copy(remoteFile, localFile); err != nil {
 				return err
 			}
+
+			// Create() applies default permissions, so restore the
+			// source mode (e.g. +x on scripts like build.sh)
+			if err := sftpClient.Chmod(remotePath, fileInfo.Mode()); err != nil {
+				return err
+			}
 		}
 
 		return nil
